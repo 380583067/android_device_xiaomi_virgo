@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+
+# Inherit from msm8974-common
 -include device/xiaomi/msm8974-common/BoardConfigCommon.mk
 
 DEVICE_PATH := device/xiaomi/virgo
@@ -28,7 +30,8 @@ DEVICE_MANIFEST_FILE += $(DEVICE_PATH)/manifest.xml
 TARGET_RELEASETOOLS_EXTENSIONS := $(DEVICE_PATH)/releasetools
 
 # Vendor Init
-TARGET_INIT_VENDOR_LIB      := libinit_virgo
+TARGET_INIT_VENDOR_LIB := libinit_virgo
 TARGET_LIBINIT_DEFINES_FILE := $(DEVICE_PATH)/init/init_virgo.cpp
 
+# Inherit the proprietary files
 -include vendor/xiaomi/virgo/BoardConfigVendor.mk
