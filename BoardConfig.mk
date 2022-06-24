@@ -16,7 +16,7 @@
 #
 
 # Inherit from msm8974-common
--include device/xiaomi/msm8974-common/BoardConfigCommon.mk
+include device/xiaomi/msm8974-common/BoardConfigCommon.mk
 
 DEVICE_PATH := device/xiaomi/virgo
 
@@ -37,4 +37,4 @@ TARGET_INIT_VENDOR_LIB := libinit_virgo
 TARGET_LIBINIT_DEFINES_FILE := $(DEVICE_PATH)/init/init_virgo.cpp
 
 # Inherit the proprietary files
--include vendor/xiaomi/virgo/BoardConfigVendor.mk
+include vendor/xiaomi/virgo/BoardConfigVendor.mk
