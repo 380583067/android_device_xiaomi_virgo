@@ -12,22 +12,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
 # Inherit from those products. Most specific first.
+# Keep eng adb/root while selecting the release ART APEX.
+PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
+
 $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_k.mk)
 
 # Inherit from virgo device
 $(call inherit-product, device/xiaomi/virgo/virgo.mk)
 
-# Inherit some common Mokee stuff.
-$(call inherit-product, vendor/mokee/config/common_full_phone.mk)
+# Inherit some common LineageOS stuff.
+$(call inherit-product, vendor/lineage/config/common_full_phone.mk)
 
-PRODUCT_NAME := mokee_virgo
+# Device identifier. This must come after all inclusions.
+PRODUCT_NAME := lineage_virgo
 PRODUCT_DEVICE := virgo
 PRODUCT_BRAND := Xiaomi
 PRODUCT_MANUFACTURER := Xiaomi
 PRODUCT_MODEL := MI NOTE LTE
 
 PRODUCT_GMS_CLIENTID_BASE := android-xiaomi
-
-TARGET_CONTINUOUS_SPLASH_ENABLED := true

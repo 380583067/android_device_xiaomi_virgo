@@ -1,0 +1,11 @@
+diff --git a/lineage_virgo.mk b/lineage_virgo.mk
+--- a/lineage_virgo.mk
++++ b/lineage_virgo.mk
+@@ -17,4 +17,7 @@
+ # Inherit from those products. Most specific first.
++# Keep eng adb/root while selecting the release ART APEX.
++PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
++
+ $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_k.mk)
+ 
+ # Inherit from virgo device
