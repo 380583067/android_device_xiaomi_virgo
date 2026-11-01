@@ -1,0 +1,26 @@
+diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
+--- a/rootdir/etc/init.target.rc
++++ b/rootdir/etc/init.target.rc
+@@ -211,8 +211,7 @@
+     oneshot
+     disabled
+ 
+-# Keep logging after boot, including when adbd is unavailable. Retain at most
+-# nine 8-MiB files across reboots; never clear the previous boot's evidence.
++# Cache logging is disabled by default. Start logger explicitly for debugging.
+ service logger /system/bin/logcat -b all -v threadtime -v usec -D -f /cache/boot_log.txt -r 8192 -n 8 *:V
+     class main
+     user root
+@@ -220,12 +219,6 @@
+     seclabel u:r:cache_logger:s0
+     disabled
+     oom_score_adjust -600
+-
+-# Core init has mounted, set permissions on, and relabeled /cache by this point.
+-# Start before /data setup so failures there can also be recorded. Without
+-# oneshot, init restarts logcat if logd disconnects or logcat exits.
+-on post-fs
+-    start logger
+ 
+ on property:sys.perf.profile=*
+     start changepowermode

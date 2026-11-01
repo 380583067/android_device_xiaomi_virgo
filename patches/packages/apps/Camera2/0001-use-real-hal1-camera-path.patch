@@ -1,0 +1,82 @@
+diff --git a/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java b/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java
+index a72a27f..facf661 100644
+--- a/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java
++++ b/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java
+@@ -104,7 +104,7 @@ public class LegacyOneCameraManagerImpl implements OneCameraManager {
+ 
+     @Override
+     public boolean hasCamera() {
+-        return false;
++        return mCameraInfos.length > 0;
+     }
+ 
+     @Override
+diff --git a/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java b/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java
+index be5ddc9..6d1d4dd 100644
+--- a/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java
++++ b/src/com/android/camera/one/v2/Camera2OneCameraManagerImpl.java
+@@ -33,6 +33,7 @@ import com.android.camera.one.OneCameraCharacteristics;
+ import com.android.camera.one.OneCameraManager;
+ import com.android.camera.util.AndroidServices;
+ import com.android.camera.util.ApiHelper;
++import com.android.ex.camera2.portability.util.SystemProperties;
+ import com.google.common.base.Optional;
+ 
+ import java.util.Hashtable;
+@@ -50,7 +51,8 @@ public class Camera2OneCameraManagerImpl extends CameraManager.AvailabilityCallb
+      * Create a new camera2 api hardware manager.
+      */
+     public static Optional<Camera2OneCameraManagerImpl> create() {
+-        if (!ApiHelper.HAS_CAMERA_2_API) {
++        if (!ApiHelper.HAS_CAMERA_2_API
++                || "1".equals(SystemProperties.get("camera2.portability.force_api", "0"))) {
+             return Optional.absent();
+         }
+         CameraManager cameraManager;
+diff --git a/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java b/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java
+index f0a0ce6..572e259 100644
+--- a/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java
++++ b/src/com/android/camera/one/v2/Camera2OneCameraOpenerImpl.java
+@@ -43,6 +43,7 @@ import com.android.camera.one.config.OneCameraFeatureConfig;
+ import com.android.camera.one.v2.photo.ImageRotationCalculator;
+ import com.android.camera.util.AndroidServices;
+ import com.android.camera.util.ApiHelper;
++import com.android.ex.camera2.portability.util.SystemProperties;
+ import com.google.common.base.Optional;
+ 
+ /**
+@@ -63,7 +64,8 @@ public class Camera2OneCameraOpenerImpl implements OneCameraOpener {
+             Context context,
+             ActiveCameraDeviceTracker activeCameraDeviceTracker,
+             DisplayMetrics displayMetrics) {
+-        if (!ApiHelper.HAS_CAMERA_2_API) {
++        if (!ApiHelper.HAS_CAMERA_2_API
++                || "1".equals(SystemProperties.get("camera2.portability.force_api", "0"))) {
+             return Optional.absent();
+         }
+         CameraManager cameraManager;
+diff --git a/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java b/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
+index dc7f900..0068e43 100644
+--- a/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
++++ b/src/com/android/camera/one/config/OneCameraFeatureConfigCreator.java
+@@ -26,6 +26,7 @@ import com.android.camera.one.config.OneCameraFeatureConfig.HdrPlusSupportLevel;
+ import com.android.camera.util.ApiHelper;
+ import com.android.camera.util.GcamHelper;
+ import com.android.camera.util.GservicesHelper;
++import com.android.ex.camera2.portability.util.SystemProperties;
+ import com.google.common.base.Function;
+ import com.google.common.base.Optional;
+ 
+@@ -40,8 +41,10 @@ public class OneCameraFeatureConfigCreator {
+      */
+     public static OneCameraFeatureConfig createDefault(ContentResolver contentResolver,
+             MemoryManager memoryManager) {
+-        // Enable CaptureModule on all M devices.
+-        boolean useCaptureModule = true;
++        // HAL1 uses PhotoModule. CaptureModule requires Camera2 features that
++        // the legacy OneCamera implementation does not provide.
++        boolean useCaptureModule =
++                !"1".equals(SystemProperties.get("camera2.portability.force_api", "0"));
+         Log.i(TAG, "CaptureModule? " + useCaptureModule);
+ 
+         // HDR+ has multiple levels of support.

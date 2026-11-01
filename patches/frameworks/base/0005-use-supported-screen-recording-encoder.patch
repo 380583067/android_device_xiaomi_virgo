@@ -1,0 +1,77 @@
+diff --git a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
+index 3d0cabd..2d8a7e5 100644
+--- a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
++++ b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
+@@ -33,6 +33,7 @@ import android.hardware.display.DisplayManager;
+ import android.hardware.display.VirtualDisplay;
+ import android.media.MediaCodec;
+ import android.media.MediaCodecInfo;
++import android.media.MediaCodecList;
+ import android.media.MediaFormat;
+ import android.media.MediaMuxer;
+ import android.media.MediaRecorder;
+@@ -164,6 +165,12 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
+         mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+ 
+ 
++        // HEVC is optional, including on devices with an HEVC decoder.
++        if (mHEVC && !isHardwareHevcEncoderAvailable()) {
++            Log.w(TAG, "No hardware HEVC encoder; using AVC for screen recording");
++            mHEVC = false;
++        }
++
+         // Set up video
+         DisplayMetrics metrics = new DisplayMetrics();
+         WindowManager wm = (WindowManager) mContext.getSystemService(Context.WINDOW_SERVICE);
+@@ -251,6 +258,16 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
+         }
+     }
+ 
++    static boolean isHardwareHevcEncoderAvailable() {
++        for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
++            if (!info.isEncoder() || !info.isHardwareAccelerated()) continue;
++            for (String type : info.getSupportedTypes()) {
++                if (MediaFormat.MIMETYPE_VIDEO_HEVC.equalsIgnoreCase(type)) return true;
++            }
++        }
++        return false;
++    }
++
+     /**
+      * Find the highest supported screen resolution and refresh rate for the given dimensions on
+      * this device, up to actual size and given rate.
+@@ -264,13 +281,14 @@ public class ScreenMediaRecorder extends MediaProjection.Callback {
+      */
+     private int[] getSupportedSize(final int screenWidth, final int screenHeight, int refreshRate)
+             throws IOException {
+-        String videoType = MediaFormat.MIMETYPE_VIDEO_AVC;
++        String videoType = mHEVC ? MediaFormat.MIMETYPE_VIDEO_HEVC
++                : MediaFormat.MIMETYPE_VIDEO_AVC;
+ 
+-        // Get max size from the decoder, to ensure recordings will be playable on device
+-        MediaCodec decoder = MediaCodec.createDecoderByType(videoType);
+-        MediaCodecInfo.VideoCapabilities vc = decoder.getCodecInfo()
++        // The encoder's alignment, size and frame-rate limits constrain capture.
++        MediaCodec encoder = MediaCodec.createEncoderByType(videoType);
++        MediaCodecInfo.VideoCapabilities vc = encoder.getCodecInfo()
+                 .getCapabilitiesForType(videoType).getVideoCapabilities();
+-        decoder.release();
++        encoder.release();
+ 
+         // Check if we can support screen size as-is
+         int width = vc.getSupportedWidths().getUpper();
+diff --git a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenRecordDialog.java b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenRecordDialog.java
+index 0478d9e..e62a308 100644
+--- a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenRecordDialog.java
++++ b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenRecordDialog.java
+@@ -226,6 +226,9 @@ public class ScreenRecordDialog extends SystemUIDialog {
+         mAudioSwitch.setChecked(Prefs.getInt(userContext, PREFS + PREF_AUDIO, 0) == 1);
+         mOptions.setSelection(Prefs.getInt(userContext, PREFS + PREF_AUDIO_SOURCE, 0));
+         mSkipSwitch.setChecked(Prefs.getInt(userContext, PREFS + PREF_SKIP, 0) == 1);
+-        mHEVCSwitch.setChecked(Prefs.getInt(userContext, PREFS + PREF_HEVC, 1) == 1);
++        boolean hevcAvailable = ScreenMediaRecorder.isHardwareHevcEncoderAvailable();
++        mHEVCSwitch.setEnabled(hevcAvailable);
++        mHEVCSwitch.setChecked(hevcAvailable
++                && Prefs.getInt(userContext, PREFS + PREF_HEVC, 1) == 1);
+     }
+ }

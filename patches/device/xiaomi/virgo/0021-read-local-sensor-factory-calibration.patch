@@ -1,0 +1,21 @@
+diff --git a/sepolicy/sensors.te b/sepolicy/sensors.te
+--- a/sepolicy/sensors.te
++++ b/sepolicy/sensors.te
+@@ -2,3 +2,8 @@
+ # Label only this board's five IIO sensor devices for read-only acquisition.
+ type virgo_sensor_device, dev_type;
+ allow system_server virgo_sensor_device:chr_file r_file_perms;
++
++# The passthrough HAL reads this phone's factory calibration during startup.
++# Keep access limited to the explicitly labeled calibration files.
++type virgo_sensor_calibration_file, file_type;
++allow system_server virgo_sensor_calibration_file:file r_file_perms;
+diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
+--- a/sepolicy/file_contexts
++++ b/sepolicy/file_contexts
+@@ -33,3 +33,5 @@
+ # WCNSS Bluetooth's command/event and ACL channels, not general modem ports.
+ /dev/smd2 u:object_r:hci_attach_dev:s0
+ /dev/smd3 u:object_r:hci_attach_dev:s0
++# Factory sensor calibration used by libsensors.leo/libinvensense_hal.
++/persist/((A|G|M|P|PR|Light)SensorData|PSensorTh(Near|Far)|PSensor3cm_ct)\.txt u:object_r:virgo_sensor_calibration_file:s0

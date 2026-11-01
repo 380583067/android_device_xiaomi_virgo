@@ -1,0 +1,15 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -43,5 +43,10 @@
+ # while reducing its PNG payload enough for virgo's fixed 16-MiB partition.
+ TARGET_RECOVERY_DENSITY := hdpi
++
++# EROFS is read-only, so recovery does not need the image-creation utility.
++# Keep mkfs.erofs in Android userspace and on the build host, but omit its
++# duplicate recovery copy to leave OTA headroom in virgo's 16-MiB partition.
++BOARD_RECOVERY_IMAGE_PREPARE = rm -f $(TARGET_RECOVERY_ROOT_OUT)/system/bin/mkfs.erofs
+ 
+ # Dual sim solution in virgo
+ CONFIG_EAP_PROXY_DUAL_SIM := true
+ 

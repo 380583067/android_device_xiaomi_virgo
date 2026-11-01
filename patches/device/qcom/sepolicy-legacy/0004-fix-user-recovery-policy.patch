@@ -1,0 +1,83 @@
+diff --git a/common/hal_perf_default.te b/common/hal_perf_default.te
+--- a/common/hal_perf_default.te
++++ b/common/hal_perf_default.te
+@@ -40,9 +40,9 @@
+ add_hwservice(hal_perf_server, hal_perf_hwservice)
+ allow hal_perf_client hal_perf_hwservice:hwservice_manager find;
+ 
+-allow hal_perf cgroup:file r_file_perms;
++allow hal_perf_server cgroup:file r_file_perms;
+ allow hal_perf_default proc:file rw_file_perms;
+-allow hal_perf device_latency:chr_file rw_file_perms;
++allow hal_perf_server device_latency:chr_file rw_file_perms;
+ allow hal_perf_default qcom_mpctl_data_file_type:dir rw_dir_perms;
+ allow hal_perf_default qcom_mpctl_data_file_type:file create_file_perms;
+ allow hal_perf_default lm_data_file:dir rw_dir_perms;
+@@ -53,20 +53,20 @@
+ set_prop(hal_perf_default, freq_prop)
+ 
+ #Access to /proc/meminfo
+-allow hal_perf proc_meminfo:file r_file_perms;
++allow hal_perf_server proc_meminfo:file r_file_perms;
+ 
+ #Access to /proc/pid of other apps
+-r_dir_file(hal_perf, appdomain);
+-dontaudit hal_perf domain:dir r_dir_perms;
+-allow hal_perf appdomain:process sigkill;
++r_dir_file(hal_perf_server, appdomain);
++dontaudit hal_perf_server domain:dir r_dir_perms;
++allow hal_perf_server appdomain:process sigkill;
+ allow hal_perf_default self:capability { sys_resource kill};
+ 
+ #Acess to kgsl memory /sys/class/kgsl/kgsl/proc/<pid>/kernel &
+ #Acess to ion  memory /sys/class/kgsl/kgsl/proc/<pid>/ion
+-allow hal_perf sysfs_kgsl_proc:dir r_dir_perms;
+-allow hal_perf sysfs_kgsl_proc:file r_file_perms;
++allow hal_perf_server sysfs_kgsl_proc:dir r_dir_perms;
++allow hal_perf_server sysfs_kgsl_proc:file r_file_perms;
+ 
+-allow hal_perf {
++allow hal_perf_server {
+     sysfs_devices_system_cpu
+     sysfs_mpdecision
+     sysfs_devfreq
+@@ -83,7 +83,7 @@
+     sysfs_process_reclaim
+ }:dir r_dir_perms;
+ 
+-allow hal_perf {
++allow hal_perf_server {
+     sysfs_devices_system_cpu
+     sysfs_mpdecision
+     sysfs_kgsl
+@@ -99,7 +99,7 @@
+     sysfs_process_reclaim
+ }:file rw_file_perms;
+ 
+-allow hal_perf {
++allow hal_perf_server {
+     sysfs_devfreq
+     sysfs_mmc_host
+     sysfs_scsi_host
+diff --git a/common/recovery.te b/common/recovery.te
+--- a/common/recovery.te
++++ b/common/recovery.te
+@@ -11,8 +11,8 @@
+     allow recovery RIDL_data_file:dir r_dir_perms;
+     allow recovery qti_logkit_priv_data_file:file r_file_perms;
+     allow recovery qti_logkit_priv_data_file:dir r_dir_perms;
+-    allow recovery rfs_system_file:{file lnk_file } { create_file_perms relabelfrom relabelto };
+-    allow recovery rfs_system_file:dir { create_dir_perms relabelfrom relabelto };
++    allow recovery rfs_system_file:{ file lnk_file } r_file_perms;
++    allow recovery rfs_system_file:dir r_dir_perms;
+     allow recovery cache_file:dir mounton;
+     allow recovery qce_device:chr_file rw_file_perms;
+     allow recovery tee_device:chr_file rw_file_perms;
+@@ -22,7 +22,6 @@
+     # Enable adb on configfs devices
+     allow recovery configfs:file rw_file_perms;
+     allow recovery configfs:dir rw_dir_perms;
+-    set_prop(recovery, ffs_config_prop)
+     get_prop(recovery, usb_control_prop)
+     get_prop(recovery, boot_mode_prop)
+ ')

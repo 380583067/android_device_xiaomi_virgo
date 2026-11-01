@@ -1,0 +1,21 @@
+diff --git a/ui/build/config.go b/ui/build/config.go
+--- a/ui/build/config.go
++++ b/ui/build/config.go
+@@ -441,6 +441,17 @@
+ 			ctx.Println("Failed to get current user:", err)
+ 		}
+ 		ret.environ.Set("BUILD_USERNAME", username)
++	}
++
++	// Pin Virgo builds to 2026-10-24 10:24:00 in Beijing (UTC+08:00).
++	// Set both the timestamp consumed by packaging and the legacy Make value.
++	if product, _ := ret.environ.Get("TARGET_PRODUCT"); product == "lineage_virgo" {
++		ret.buildDateTime = "1792808640"
++		ret.environ.Set("BUILD_DATETIME", ret.buildDateTime)
++		if _, ok := ret.environ.Get("BUILD_NUMBER"); !ok {
++			username, _ := ret.environ.Get("BUILD_USERNAME")
++			ret.environ.Set("BUILD_NUMBER", fmt.Sprintf("eng.%.6s.20261024.102400", username))
++		}
+ 	}
+ 
+ 	if ret.UseRBE() {

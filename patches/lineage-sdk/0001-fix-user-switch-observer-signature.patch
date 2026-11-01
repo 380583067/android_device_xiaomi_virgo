@@ -1,0 +1,19 @@
+From: Virgo Android 14 port <virgo-port@localhost>
+Subject: [PATCH] lineage-sdk: match Android 14 user-switch observer API
+
+Android 14's IUserSwitchObserver.onBeforeUserSwitching() accepts only the new
+user ID. The old Lineage SDK implementation still declared the removed reply
+argument, so javac rejected the @Override and left the Binder stub incomplete.
+Keep the asynchronous reply callback on onUserSwitching(), where Android 14
+still defines it, and update only the before-switch signature.
+
+--- a/lineage/lib/main/java/org/lineageos/platform/internal/common/UserContentObserver.java
++++ b/lineage/lib/main/java/org/lineageos/platform/internal/common/UserContentObserver.java
+@@ -35,6 +35,6 @@ public abstract class UserContentObserver extends ContentObserver {
+     private IUserSwitchObserver mUserSwitchObserver = new IUserSwitchObserver.Stub() {
+         @Override
+-        public void onBeforeUserSwitching(int newUserId, IRemoteCallback reply)
++        public void onBeforeUserSwitching(int newUserId)
+                 throws RemoteException {
+         }
+         @Override

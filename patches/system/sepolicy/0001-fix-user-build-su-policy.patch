@@ -1,0 +1,198 @@
+diff --git a/prebuilts/api/30.0/private/init.te b/prebuilts/api/30.0/private/init.te
+index e40b159..764c2a4 100644
+--- a/prebuilts/api/30.0/private/init.te
++++ b/prebuilts/api/30.0/private/init.te
+@@ -27,9 +27,11 @@ userdebug_or_eng(`
+ ')
+ 
+ # allow init to execute services marked with seclabel u:r:su:s0 in userdebug/eng
+-allow init su:process transition;
+-dontaudit init su:process noatsecure;
+-allow init su:process { siginh rlimitinh };
++userdebug_or_eng(`
++  allow init su:process transition;
++  dontaudit init su:process noatsecure;
++  allow init su:process { siginh rlimitinh };
++')
+ 
+ # Allow init to figure out name of dm-device from it's /dev/block/dm-XX path.
+ # This is useful in case of remounting ext4 userdata into checkpointing mode,
+diff --git a/prebuilts/api/30.0/private/su.te b/prebuilts/api/30.0/private/su.te
+index 8ed6ee8..16e47bb 100644
+--- a/prebuilts/api/30.0/private/su.te
++++ b/prebuilts/api/30.0/private/su.te
+@@ -1,3 +1,4 @@
++userdebug_or_eng(`
+   typeattribute su coredomain;
+ 
+   domain_auto_trans(shell, su_exec, su)
+@@ -19,3 +20,4 @@
+   permissive su;
+ 
+   app_domain(su)
++')
+diff --git a/prebuilts/api/31.0/private/init.te b/prebuilts/api/31.0/private/init.te
+index 7eac8d7..42bfe51 100644
+--- a/prebuilts/api/31.0/private/init.te
++++ b/prebuilts/api/31.0/private/init.te
+@@ -28,9 +28,11 @@ userdebug_or_eng(`
+ ')
+ 
+ # allow init to execute services marked with seclabel u:r:su:s0 in userdebug/eng
+-allow init su:process transition;
+-dontaudit init su:process noatsecure;
+-allow init su:process { siginh rlimitinh };
++userdebug_or_eng(`
++  allow init su:process transition;
++  dontaudit init su:process noatsecure;
++  allow init su:process { siginh rlimitinh };
++')
+ 
+ # Allow init to figure out name of dm-device from it's /dev/block/dm-XX path.
+ # This is useful in case of remounting ext4 userdata into checkpointing mode,
+diff --git a/prebuilts/api/31.0/private/su.te b/prebuilts/api/31.0/private/su.te
+index 73e8944..818f08c 100644
+--- a/prebuilts/api/31.0/private/su.te
++++ b/prebuilts/api/31.0/private/su.te
+@@ -1,3 +1,4 @@
++userdebug_or_eng(`
+   typeattribute su coredomain;
+ 
+   domain_auto_trans(shell, su_exec, su)
+@@ -25,3 +26,4 @@
+ 
+   # Do not audit accesses to keystore2 namespace for the su domain.
+   dontaudit su keystore2_key_type:{ keystore2 keystore2_key } *;
++')
+diff --git a/prebuilts/api/32.0/private/init.te b/prebuilts/api/32.0/private/init.te
+index 2361044..144feda 100644
+--- a/prebuilts/api/32.0/private/init.te
++++ b/prebuilts/api/32.0/private/init.te
+@@ -28,9 +28,11 @@ userdebug_or_eng(`
+ ')
+ 
+ # allow init to execute services marked with seclabel u:r:su:s0 in userdebug/eng
+-allow init su:process transition;
+-dontaudit init su:process noatsecure;
+-allow init su:process { siginh rlimitinh };
++userdebug_or_eng(`
++  allow init su:process transition;
++  dontaudit init su:process noatsecure;
++  allow init su:process { siginh rlimitinh };
++')
+ 
+ # Allow init to figure out name of dm-device from it's /dev/block/dm-XX path.
+ # This is useful in case of remounting ext4 userdata into checkpointing mode,
+diff --git a/prebuilts/api/32.0/private/su.te b/prebuilts/api/32.0/private/su.te
+index 73e8944..818f08c 100644
+--- a/prebuilts/api/32.0/private/su.te
++++ b/prebuilts/api/32.0/private/su.te
+@@ -1,3 +1,4 @@
++userdebug_or_eng(`
+   typeattribute su coredomain;
+ 
+   domain_auto_trans(shell, su_exec, su)
+@@ -25,3 +26,4 @@
+ 
+   # Do not audit accesses to keystore2 namespace for the su domain.
+   dontaudit su keystore2_key_type:{ keystore2 keystore2_key } *;
++')
+diff --git a/prebuilts/api/33.0/private/init.te b/prebuilts/api/33.0/private/init.te
+index c738473..4aa5350 100644
+--- a/prebuilts/api/33.0/private/init.te
++++ b/prebuilts/api/33.0/private/init.te
+@@ -29,9 +29,11 @@ userdebug_or_eng(`
+ ')
+ 
+ # allow init to execute services marked with seclabel u:r:su:s0 in userdebug/eng
+-allow init su:process transition;
+-dontaudit init su:process noatsecure;
+-allow init su:process { siginh rlimitinh };
++userdebug_or_eng(`
++  allow init su:process transition;
++  dontaudit init su:process noatsecure;
++  allow init su:process { siginh rlimitinh };
++')
+ 
+ # Allow init to figure out name of dm-device from it's /dev/block/dm-XX path.
+ # This is useful in case of remounting ext4 userdata into checkpointing mode,
+diff --git a/prebuilts/api/33.0/private/su.te b/prebuilts/api/33.0/private/su.te
+index 73e8944..818f08c 100644
+--- a/prebuilts/api/33.0/private/su.te
++++ b/prebuilts/api/33.0/private/su.te
+@@ -1,3 +1,4 @@
++userdebug_or_eng(`
+   typeattribute su coredomain;
+ 
+   domain_auto_trans(shell, su_exec, su)
+@@ -25,3 +26,4 @@
+ 
+   # Do not audit accesses to keystore2 namespace for the su domain.
+   dontaudit su keystore2_key_type:{ keystore2 keystore2_key } *;
++')
+diff --git a/prebuilts/api/34.0/private/init.te b/prebuilts/api/34.0/private/init.te
+index f34d166..649e863 100644
+--- a/prebuilts/api/34.0/private/init.te
++++ b/prebuilts/api/34.0/private/init.te
+@@ -31,9 +31,11 @@ userdebug_or_eng(`
+ ')
+ 
+ # allow init to execute services marked with seclabel u:r:su:s0 in userdebug/eng
+-allow init su:process transition;
+-dontaudit init su:process noatsecure;
+-allow init su:process { siginh rlimitinh };
++userdebug_or_eng(`
++  allow init su:process transition;
++  dontaudit init su:process noatsecure;
++  allow init su:process { siginh rlimitinh };
++')
+ 
+ # Allow init to figure out name of dm-device from it's /dev/block/dm-XX path.
+ # This is useful in case of remounting ext4 userdata into checkpointing mode,
+diff --git a/prebuilts/api/34.0/private/su.te b/prebuilts/api/34.0/private/su.te
+index 7c99a0b..cc00e10 100644
+--- a/prebuilts/api/34.0/private/su.te
++++ b/prebuilts/api/34.0/private/su.te
+@@ -1,3 +1,4 @@
++userdebug_or_eng(`
+   typeattribute su coredomain;
+ 
+   domain_auto_trans(shell, su_exec, su)
+@@ -31,3 +32,4 @@
+ 
+   # Allow root to set MTE permissive mode.
+   set_prop(su, permissive_mte_prop);
++')
+diff --git a/private/init.te b/private/init.te
+index f34d166..649e863 100644
+--- a/private/init.te
++++ b/private/init.te
+@@ -31,9 +31,11 @@ userdebug_or_eng(`
+ ')
+ 
+ # allow init to execute services marked with seclabel u:r:su:s0 in userdebug/eng
+-allow init su:process transition;
+-dontaudit init su:process noatsecure;
+-allow init su:process { siginh rlimitinh };
++userdebug_or_eng(`
++  allow init su:process transition;
++  dontaudit init su:process noatsecure;
++  allow init su:process { siginh rlimitinh };
++')
+ 
+ # Allow init to figure out name of dm-device from it's /dev/block/dm-XX path.
+ # This is useful in case of remounting ext4 userdata into checkpointing mode,
+diff --git a/private/su.te b/private/su.te
+index 5b5cd3d..2e0d10a 100644
+--- a/private/su.te
++++ b/private/su.te
+@@ -1,3 +1,4 @@
++userdebug_or_eng(`
+   typeattribute su coredomain;
+ 
+   domain_auto_trans(shell, su_exec, su)
+@@ -32,3 +33,4 @@
+ 
+   # Allow root to set MTE permissive mode.
+   set_prop(su, permissive_mte_prop);
++')

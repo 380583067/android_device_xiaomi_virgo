@@ -1,0 +1,40 @@
+--- a/qcwcn/wifi_hal/llstats.cpp
++++ b/qcwcn/wifi_hal/llstats.cpp
+@@ -190,12 +190,11 @@
+     memcpy(&stats->country_str[0], nla_data(tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_INFO_COUNTRY_STR]),
+            len);
+ 
+-    if (!tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_INFO_TS_DUTY_CYCLE])
+-    {
+-        ALOGE("%s: QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_INFO_TS_DUTY_CYCLE not found", __FUNCTION__);
+-        return WIFI_ERROR_INVALID_ARGS;
+-    }
+-    stats->time_slicing_duty_cycle_percent = nla_get_u8(tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_INFO_TS_DUTY_CYCLE]);
++    // Older single-radio firmware predates time-slicing duty-cycle reporting.
++    stats->time_slicing_duty_cycle_percent =
++            tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_INFO_TS_DUTY_CYCLE]
++            ? nla_get_u8(tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_IFACE_INFO_TS_DUTY_CYCLE])
++            : 100;
+ #if QC_HAL_DEBUG
+     ALOGV("Mode : %d\n"
+           "Mac addr : "
+@@ -965,14 +964,11 @@
+             {
+                 case QCA_NL80211_VENDOR_SUBCMD_LL_STATS_TYPE_RADIO:
+                 {
+-                    if (!tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_NUM_RADIOS])
+-                    {
+-                        ALOGD("%s: QCA_WLAN_VENDOR_ATTR_LL_STATS_NUM_RADIOS"
+-                              " not found", __FUNCTION__);
+-                        return WIFI_ERROR_INVALID_ARGS;
+-                    }
+-                    mNumRadios = nla_get_u32(tb_vendor[
+-                                    QCA_WLAN_VENDOR_ATTR_LL_STATS_NUM_RADIOS]);
++                    // The original MSM8974 protocol reports one radio without
++                    // the later NUM_RADIOS extension.
++                    mNumRadios = tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_NUM_RADIOS]
++                            ? nla_get_u32(tb_vendor[QCA_WLAN_VENDOR_ATTR_LL_STATS_NUM_RADIOS])
++                            : 1;
+ 
+                     if (!tb_vendor[
+                         QCA_WLAN_VENDOR_ATTR_LL_STATS_RADIO_NUM_CHANNELS

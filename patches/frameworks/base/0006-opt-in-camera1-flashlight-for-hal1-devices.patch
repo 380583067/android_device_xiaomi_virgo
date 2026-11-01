@@ -1,0 +1,106 @@
+diff --git a/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java b/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/policy/FlashlightControllerImpl.java
+@@ -17,6 +17,10 @@
+ package com.android.systemui.statusbar.policy;
+ 
+ import android.annotation.WorkerThread;
++import android.graphics.SurfaceTexture;
++import android.hardware.Camera;
++import android.os.SystemProperties;
++import java.io.IOException;
+ import android.content.pm.PackageManager;
+ import android.hardware.camera2.CameraAccessException;
+ import android.hardware.camera2.CameraCharacteristics;
+@@ -67,6 +71,9 @@
+     private final BroadcastSender mBroadcastSender;
+ 
+     private final boolean mHasFlashlight;
++    private final boolean mLegacyTorch = SystemProperties.getBoolean("ro.camera.legacy_torch", false);
++    private Camera mLegacyCamera;
++    private SurfaceTexture mLegacyTexture;
+ 
+     @GuardedBy("mListeners")
+     private final ArrayList<WeakReference<FlashlightListener>> mListeners = new ArrayList<>(1);
+@@ -109,6 +116,20 @@
+     @WorkerThread
+     private void tryInitCamera() {
+         if (!mHasFlashlight || mCameraId.get() != null) return;
++        if (mLegacyTorch) {
++            Camera.CameraInfo info = new Camera.CameraInfo();
++            for (int id = 0; id < Camera.getNumberOfCameras(); id++) {
++                Camera.getCameraInfo(id, info);
++                if (info.facing == Camera.CameraInfo.CAMERA_FACING_BACK) {
++                    mCameraId.set(Integer.toString(id));
++                    synchronized (this) { mTorchAvailable = true; }
++                    mSecureSettings.putInt(Secure.FLASHLIGHT_AVAILABLE, 1);
++                    dispatchAvailabilityChanged(true);
++                    return;
++                }
++            }
++            return;
++        }
+         try {
+             mCameraId.set(getCameraId());
+         } catch (Throwable e) {
+@@ -128,6 +149,10 @@
+         }
+         mExecutor.execute(() -> {
+             if (mCameraId.get() == null) return;
++            if (mLegacyTorch) {
++                setLegacyFlashlight(enabled);
++                return;
++            }
+             synchronized (this) {
+                 if (mFlashlightEnabled != enabled) {
+                     try {
+@@ -139,6 +164,49 @@
+                 }
+             }
+         });
++    }
++
++    // Opt-in for HAL1 products; all camera calls run on the background executor.
++    private synchronized void setLegacyFlashlight(boolean enabled) {
++        if (mFlashlightEnabled == enabled) return;
++        try {
++            if (enabled) {
++                mLegacyCamera = Camera.open(Integer.parseInt(mCameraId.get()));
++                mLegacyCamera.setErrorCallback((error, camera) ->
++                        mExecutor.execute(() -> setLegacyFlashlight(false)));
++                Camera.Parameters params = mLegacyCamera.getParameters();
++                if (params.getSupportedFlashModes() == null
++                        || !params.getSupportedFlashModes().contains(Camera.Parameters.FLASH_MODE_TORCH)) {
++                    throw new IllegalStateException("Camera has no torch mode");
++                }
++                mLegacyTexture = new SurfaceTexture(false);
++                mLegacyCamera.setPreviewTexture(mLegacyTexture);
++                params.setFlashMode(Camera.Parameters.FLASH_MODE_TORCH);
++                mLegacyCamera.setParameters(params);
++                mLegacyCamera.startPreview();
++            } else {
++                releaseLegacyCamera();
++            }
++            mFlashlightEnabled = enabled;
++            mSecureSettings.putInt(Secure.FLASHLIGHT_ENABLED, enabled ? 1 : 0);
++            dispatchModeChanged(enabled);
++        } catch (IOException | RuntimeException e) {
++            Log.e(TAG, "Couldn't set HAL1 torch mode", e);
++            releaseLegacyCamera();
++            mFlashlightEnabled = false;
++            dispatchError();
++        }
++    }
++
++    private void releaseLegacyCamera() {
++        if (mLegacyCamera != null) {
++            mLegacyCamera.release();
++            mLegacyCamera = null;
++        }
++        if (mLegacyTexture != null) {
++            mLegacyTexture.release();
++            mLegacyTexture = null;
++        }
+     }
+ 
+     public boolean hasFlashlight() {

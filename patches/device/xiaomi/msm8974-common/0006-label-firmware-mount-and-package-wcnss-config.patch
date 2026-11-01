@@ -1,0 +1,37 @@
+diff --git a/rootdir/etc/fstab.qcom b/rootdir/etc/fstab.qcom
+--- a/rootdir/etc/fstab.qcom
++++ b/rootdir/etc/fstab.qcom
+@@ -10,7 +10,9 @@
+ /dev/block/platform/msm_sdcc.1/by-name/userdata     /data           f2fs    rw,nosuid,nodev,noatime,nodiratime,inline_xattr                 wait,check
+ /dev/block/platform/msm_sdcc.1/by-name/userdata     /data           ext4    nosuid,nodev,barrier=1,noauto_da_alloc,discard                  wait,check
+ /dev/block/platform/msm_sdcc.1/by-name/persist      /persist        ext4    nosuid,nodev,barrier=1,data=ordered,nodelalloc,nomblk_io_submit,errors=panic  wait,check
+-/dev/block/platform/msm_sdcc.1/by-name/modem        /firmware       vfat    ro,uid=1000,shortname=lower,gid=1000,dmask=227,fmask=337      wait
++# FAT has no security xattrs. Label the mount so ueventd and the Qualcomm
++# services can read the modem/DSP firmware under SELinux Enforcing.
++/dev/block/platform/msm_sdcc.1/by-name/modem        /firmware       vfat    ro,uid=1000,shortname=lower,gid=1000,dmask=227,fmask=337,context=u:object_r:firmware_file:s0      wait
+ /dev/block/platform/msm_sdcc.1/by-name/boot         /boot           emmc    defaults                                                        defaults
+ /dev/block/platform/msm_sdcc.1/by-name/recovery     /recovery       emmc    defaults                                                        defaults
+ /dev/block/platform/msm_sdcc.1/by-name/misc         /misc           emmc    defaults                                                        defaults
+diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
+--- a/rootdir/etc/init.target.rc
++++ b/rootdir/etc/init.target.rc
+@@ -59,7 +59,7 @@
+     mkdir /persist/data/tz 0700 system system
+     mkdir /persist/audio 0771 media audio
+ 
+-    mount vfat /dev/block/platform/msm_sdcc.1/by-name/modem /firmware ro shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337
++    # fstab.qcom already mounted /firmware with its SELinux mount context.
+ 
+ on post-fs-data
+     mkdir /data/tombstones 0771 system system
+diff --git a/msm8974-common.mk b/msm8974-common.mk
+--- a/msm8974-common.mk
++++ b/msm8974-common.mk
+@@ -309,6 +309,7 @@
+ # WiFi
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/wifi/WCNSS_cfg.dat:system/vendor/firmware/wlan/prima/WCNSS_cfg.dat \
++    $(LOCAL_PATH)/wifi/WCNSS_qcom_cfg.ini:system/vendor/etc/wifi/WCNSS_qcom_cfg.ini \
+     $(LOCAL_PATH)/wifi/WCNSS_qcom_cfg.ini:system/vendor/firmware/wlan/prima/WCNSS_qcom_cfg.ini \
+     $(LOCAL_PATH)/wifi/WCNSS_qcom_wlan_nv_x5.bin:system/vendor/firmware/wlan/prima/WCNSS_qcom_wlan_nv_x5.bin
+ 

@@ -1,0 +1,83 @@
+diff --git a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+index 3bebb11..332f456 100644
+--- a/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
++++ b/services/audiopolicy/managerdefault/AudioPolicyManager.cpp
+@@ -3851,6 +3851,12 @@ status_t AudioPolicyManager::unregisterPolicyMixes(Vector<AudioMix> mixes)
+                 continue;
+             }
+ 
++            // Stopping the capture input can disconnect its remote-submix output
++            // before the mix is unregistered. In that case the device loop below
++            // does not trigger a routing update. Still detach the secondary tee
++            // outputs from playing tracks after removing the policy mix.
++            checkOutputs = true;
++
+             for (auto device : {AUDIO_DEVICE_IN_REMOTE_SUBMIX, AUDIO_DEVICE_OUT_REMOTE_SUBMIX}) {
+                 if (getDeviceConnectionState(device, address.c_str()) ==
+                         AUDIO_POLICY_DEVICE_STATE_AVAILABLE)  {
+diff --git a/services/audiopolicy/tests/AudioPolicyManagerTestClient.h b/services/audiopolicy/tests/AudioPolicyManagerTestClient.h
+index 7ef0266..2eb6bc8 100644
+--- a/services/audiopolicy/tests/AudioPolicyManagerTestClient.h
++++ b/services/audiopolicy/tests/AudioPolicyManagerTestClient.h
+@@ -149,10 +149,13 @@ public:
+     }
+ 
+     status_t updateSecondaryOutputs(
+-            const TrackSecondaryOutputsMap& trackSecondaryOutputs __unused) override {
++            const TrackSecondaryOutputsMap& trackSecondaryOutputs) override {
++        mSecondaryOutputUpdates = trackSecondaryOutputs;
+         return NO_ERROR;
+     }
+ 
++    TrackSecondaryOutputsMap mSecondaryOutputUpdates;
++
+     size_t getConnectedDevicePortCount() const {
+         return mConnectedDevicePorts.size();
+     }
+diff --git a/services/audiopolicy/tests/audiopolicymanager_tests.cpp b/services/audiopolicy/tests/audiopolicymanager_tests.cpp
+index e02c93a..2c7d935 100644
+--- a/services/audiopolicy/tests/audiopolicymanager_tests.cpp
++++ b/services/audiopolicy/tests/audiopolicymanager_tests.cpp
+@@ -1438,6 +1438,42 @@ void AudioPolicyManagerTestDynamicPolicy::addPolicyMixAndStartInputForLoopback(
+                                mMixAddress, &mInjectionPort));
+ }
+ 
++TEST_F(AudioPolicyManagerTestDynamicPolicy, DetachCaptureTeeAfterInputStops) {
++    audio_port_handle_t deviceId = AUDIO_PORT_HANDLE_NONE;
++    audio_port_handle_t playbackPortId = AUDIO_PORT_HANDLE_NONE;
++    audio_attributes_t attr = AUDIO_ATTRIBUTES_INITIALIZER;
++    attr.usage = AUDIO_USAGE_MEDIA;
++    ASSERT_NO_FATAL_FAILURE(getOutputForAttr(&deviceId, AUDIO_FORMAT_PCM_16_BIT,
++            AUDIO_CHANNEL_OUT_STEREO, k48000SamplingRate, AUDIO_OUTPUT_FLAG_NONE,
++            nullptr /*output*/, &playbackPortId, attr));
++    ASSERT_EQ(NO_ERROR, mManager->startOutput(playbackPortId));
++
++    audio_config_t config = AUDIO_CONFIG_INITIALIZER;
++    config.sample_rate = k48000SamplingRate;
++    config.channel_mask = AUDIO_CHANNEL_OUT_STEREO;
++    config.format = AUDIO_FORMAT_PCM_16_BIT;
++    ASSERT_NO_FATAL_FAILURE(addPolicyMixAndStartInputForLoopback(MIX_TYPE_PLAYERS,
++            MIX_ROUTE_FLAG_LOOP_BACK_AND_RENDER, AUDIO_DEVICE_OUT_REMOTE_SUBMIX,
++            mMixAddress, config,
++            {AudioMixMatchCriterion(AUDIO_USAGE_MEDIA, AUDIO_SOURCE_DEFAULT,
++                    RULE_MATCH_ATTRIBUTE_USAGE)}));
++    ASSERT_TRUE(mClient->mSecondaryOutputUpdates.count(playbackPortId));
++    ASSERT_FALSE(mClient->mSecondaryOutputUpdates.at(playbackPortId).empty());
++
++    // AudioRecord.stop/release disconnects the submix before unregistering its policy.
++    ASSERT_EQ(NO_ERROR, mManager->stopInput(mLoopbackInputPortId));
++    mManager->releaseInput(mLoopbackInputPortId);
++    mLoopbackInputPortId = AUDIO_PORT_HANDLE_NONE;
++    mClient->mSecondaryOutputUpdates.clear();
++    ASSERT_EQ(NO_ERROR, mManager->unregisterPolicyMixes(mAudioMixes));
++    mAudioMixes.clear();
++    ASSERT_TRUE(mClient->mSecondaryOutputUpdates.count(playbackPortId));
++    EXPECT_TRUE(mClient->mSecondaryOutputUpdates.at(playbackPortId).empty());
++
++    EXPECT_EQ(NO_ERROR, mManager->stopOutput(playbackPortId));
++    mManager->releaseOutput(playbackPortId);
++}
++
+ TEST_F(AudioPolicyManagerTestDynamicPolicy, InitSuccess) {
+     // SetUp must finish with no assertions
+ }

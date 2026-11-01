@@ -1,0 +1,147 @@
+diff --git a/core/java/android/database/sqlite/SQLiteTokenizer.java b/core/java/android/database/sqlite/SQLiteTokenizer.java
+index 7e7c3fb97..882fa98cd 100644
+--- a/core/java/android/database/sqlite/SQLiteTokenizer.java
++++ b/core/java/android/database/sqlite/SQLiteTokenizer.java
+@@ -69,6 +69,12 @@ public class SQLiteTokenizer {
+      */
+     public static final int OPTION_TOKEN_ONLY = 1 << 0;
+ 
++    /**
++     * Checks parentheses; an unbalanced expression or one that attempts to close an
++     * earlier parenthesis will result in an exception.
++     */
++    public static final int OPTION_CHECK_BRACKETS = 1 << 1;
++
+     /**
+      * Tokenize the given SQL, returning the list of each encountered token.
+      *
+@@ -86,11 +92,13 @@ public class SQLiteTokenizer {
+      *
+      * @throws IllegalArgumentException if invalid SQL is encountered.
+      */
+-    public static void tokenize(@Nullable String sql, int options, Consumer<String> checker) {
++    public static void tokenize(@Nullable String sql, int options,
++            @Nullable Consumer<String> checker) {
+         if (sql == null) {
+             return;
+         }
+         int pos = 0;
++        int level = 0;
+         final int len = sql.length();
+         while (pos < len) {
+             final char ch = peek(sql, pos);
+@@ -105,7 +113,9 @@ public class SQLiteTokenizer {
+                 final int end = pos;
+ 
+                 final String token = sql.substring(start, end);
+-                checker.accept(token);
++                if (checker != null) {
++                    checker.accept(token);
++                }
+ 
+                 continue;
+             }
+@@ -142,9 +152,11 @@ public class SQLiteTokenizer {
+                     } else {
+                         token = tokenUnquoted;
+                     }
+-                    checker.accept(token);
++                    if (checker != null) {
++                        checker.accept(token);
++                    }
+                 } else {
+-                    if ((options &= OPTION_TOKEN_ONLY) != 0) {
++                    if ((options & OPTION_TOKEN_ONLY) != 0) {
+                         throw genException("Non-token detected", sql);
+                     }
+                 }
+@@ -164,10 +176,12 @@ public class SQLiteTokenizer {
+ 
+                 final String token = sql.substring(quoteStart + 1, quoteEnd);
+ 
+-                checker.accept(token);
++                if (checker != null) {
++                    checker.accept(token);
++                }
+                 continue;
+             }
+-            if ((options &= OPTION_TOKEN_ONLY) != 0) {
++            if ((options & OPTION_TOKEN_ONLY) != 0) {
+                 throw genException("Non-token detected", sql);
+             }
+ 
+@@ -199,11 +213,32 @@ public class SQLiteTokenizer {
+                 throw genException("Semicolon is not allowed", sql);
+             }
+ 
++            if (ch == '(') {
++                pos++;
++                level++;
++
++                continue;
++            }
++
++            if (ch == ')') {
++                pos++;
++                level--;
++                if (level < 0 && (options & OPTION_CHECK_BRACKETS) != 0) {
++                    throw genException("Unbalanced brackets", sql);
++                }
++
++                continue;
++            }
++
+             // For this purpose, we can simply ignore other characters.
+             // (Note it doesn't handle the X'' literal properly and reports this X as a token,
+             // but that should be fine...)
+             pos++;
+         }
++
++        if (level != 0 && (options & OPTION_CHECK_BRACKETS) != 0) {
++            throw genException("Unbalanced brackets", sql);
++        }
+     }
+ 
+     /**
+diff --git a/core/tests/coretests/src/android/database/sqlite/SQLiteTokenizerTest.java b/core/tests/coretests/src/android/database/sqlite/SQLiteTokenizerTest.java
+index a9d148289..87319c82d 100644
+--- a/core/tests/coretests/src/android/database/sqlite/SQLiteTokenizerTest.java
++++ b/core/tests/coretests/src/android/database/sqlite/SQLiteTokenizerTest.java
+@@ -53,6 +53,16 @@ public class SQLiteTokenizerTest {
+         }
+     }
+ 
++    private void assertInvalidBracketSql(String sql) {
++        try {
++            SQLiteTokenizer.tokenize(sql, SQLiteTokenizer.OPTION_CHECK_BRACKETS);
++            fail("Didn't throw for unbalanced brackets");
++        } catch (IllegalArgumentException e) {
++            assertTrue("Expected " + e.getMessage() + " to contain Unbalanced brackets",
++                    e.getMessage().contains("Unbalanced brackets"));
++        }
++    }
++
+     @Test
+     public void testWhitespaces() {
+         checkTokens("  select  \t\r\n a\n\n  ", "select a");
+@@ -170,4 +180,20 @@ public class SQLiteTokenizerTest {
+         checkTokens("a--\nabc/**/a00b''_1'''ABC'''`_123`abc[d]\"e\"f",
+                 "a abc a00b _1 _123 abc d e f");
+     }
++
++    @Test
++    public void testCheckBrackets() {
++        SQLiteTokenizer.tokenize("((a) b)", SQLiteTokenizer.OPTION_CHECK_BRACKETS);
++        assertInvalidBracketSql("((a) b");
++        assertInvalidBracketSql("(a) b)");
++        assertInvalidBracketSql("1=1)) OR ((1=1");
++    }
++
++    @Test
++    public void testCheckBracketsInComments() {
++        SQLiteTokenizer.tokenize("((a) -- comment with unmatched bracket )\n b)",
++                SQLiteTokenizer.OPTION_CHECK_BRACKETS);
++        SQLiteTokenizer.tokenize("((a) /* comment with unmatched bracket ) */ b)",
++                SQLiteTokenizer.OPTION_CHECK_BRACKETS);
++    }
+ }

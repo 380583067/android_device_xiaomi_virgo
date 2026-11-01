@@ -1,0 +1,63 @@
+diff --git a/BoardConfigCommon.mk b/BoardConfigCommon.mk
+--- a/BoardConfigCommon.mk
++++ b/BoardConfigCommon.mk
+@@ -184,6 +184,8 @@
+ # SELinux
+ include device/qcom/sepolicy-legacy/sepolicy.mk
+ BOARD_SEPOLICY_DIRS += $(PLATFORM_PATH)/sepolicy
++# The cache logger runs the platform logcat binary in its own core domain.
++SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += $(PLATFORM_PATH)/sepolicy/private
+ 
+ # Shim
+ TARGET_LD_SHIM_LIBS := \
+diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
+--- a/rootdir/etc/init.target.rc
++++ b/rootdir/etc/init.target.rc
+@@ -211,6 +211,22 @@
+     oneshot
+     disabled
+ 
++# Keep logging after boot, including when adbd is unavailable. Retain at most
++# nine 8-MiB files across reboots; never clear the previous boot's evidence.
++service logger /system/bin/logcat -b all -v threadtime -v usec -D -f /cache/boot_log.txt -r 8192 -n 8 *:V
++    class main
++    user root
++    group root system cache log readproc
++    seclabel u:r:cache_logger:s0
++    disabled
++    oom_score_adjust -600
++
++# Core init has mounted, set permissions on, and relabeled /cache by this point.
++# Start before /data setup so failures there can also be recorded. Without
++# oneshot, init restarts logcat if logd disconnects or logcat exits.
++on post-fs
++    start logger
++
+ on property:sys.perf.profile=*
+     start changepowermode
+ 
+diff --git a/sepolicy/private/cache_logger.te b/sepolicy/private/cache_logger.te
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/private/cache_logger.te
+@@ -0,0 +1,20 @@
++# A dedicated core domain is needed because the platform logpersist domain is
++# restricted to /data/misc/logd and cannot write /cache, even when run as root.
++type cache_logger, domain, coredomain;
++
++# The service's explicit seclabel selects this domain. Keep the platform's
++# default init -> logcat_exec -> logpersist transition unchanged.
++domain_trans(init, logcat_exec, cache_logger)
++
++read_logd(cache_logger)
++read_runtime_log_tags(cache_logger)
++get_prop(cache_logger, logd_prop)
++
++# /cache is prepared by core init and uses the existing cache_file label.
++# Directory modification and file rename/unlink are needed for log rotation.
++allow cache_logger cache_file:dir rw_dir_perms;
++allow cache_logger cache_file:file create_file_perms;
++
++# logcat moves continuous file logging into the background scheduling group.
++r_dir_file(cache_logger, cgroup)
++r_dir_file(cache_logger, cgroup_v2)

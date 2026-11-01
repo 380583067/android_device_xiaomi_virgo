@@ -1,0 +1,27 @@
+diff --git a/prebuilt/common/Android.bp b/prebuilt/common/Android.bp
+index 3985af0..d8d5f54 100644
+--- a/prebuilt/common/Android.bp
++++ b/prebuilt/common/Android.bp
+@@ -1,10 +1,5 @@
+-prebuilt_etc_xml {
+-    name: "apns-conf.xml",
+-    product_specific: true,
+-    src: "etc/apns-conf.xml",
+-    schema: ":apns-conf-schema",
+-}
+-
++// Android 14's vendor/apn project provides apns-conf.xml. Keep Lineage's
++// unrelated sensitive_pn.xml prebuilt here without redeclaring that module.
+ prebuilt_etc_xml {
+     name: "sensitive_pn.xml",
+     product_specific: true,
+diff --git a/tools/Android.bp b/tools/Android.bp
+index de18c32..ca03448 100644
+--- a/tools/Android.bp
++++ b/tools/Android.bp
+@@ -1,4 +1 @@
+-filegroup {
+-    name: "apns-conf-schema",
+-    srcs: ["apns-conf.xsd"],
+-}
++// The apns-conf-schema module is provided by vendor/apn on Android 14.

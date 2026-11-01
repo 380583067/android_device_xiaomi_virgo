@@ -30,6 +30,10 @@ LOCAL_SRC_FILES := \
     multihal.cpp \
     SensorEventQueue.cpp \
 
+# Android 14 requires the legacy sensors HAL header dependency to be explicit;
+# <hardware/sensors.h> is exported by libhardware_headers, not a transitive include.
+LOCAL_HEADER_LIBRARIES := libhardware_headers
+
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libdl \

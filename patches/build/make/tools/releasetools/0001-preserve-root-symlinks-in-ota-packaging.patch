@@ -1,0 +1,17 @@
+diff --git a/tools/releasetools/non_ab_ota.py b/tools/releasetools/non_ab_ota.py
+index 6cd01e4..a18bad2 100644
+--- a/tools/releasetools/non_ab_ota.py
++++ b/tools/releasetools/non_ab_ota.py
+@@ -604,8 +604,11 @@ def GenerateNonAbOtaPackage(target_file, output_file, source_file=None):
+       OPTIONS.input_tmp = target_file
+       tmpfile = common.MakeTempFile(suffix=".zip")
+       os.unlink(tmpfile)
++      # Store symlinks as links instead of following them into the build host.
++      # ROOT/d points to /sys/kernel/debug; following it can make packaging
++      # race live debugfs files or fail with EFAULT/permission errors.
+       common.RunAndCheckOutput(
+-          ["zip", tmpfile, "-r", ".", "-0"], cwd=target_file)
++          ["zip", tmpfile, "-r", "-y", ".", "-0"], cwd=target_file)
+       assert zipfile.is_zipfile(tmpfile)
+       target_file = tmpfile
+ 

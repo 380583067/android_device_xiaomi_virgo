@@ -1,0 +1,135 @@
+--- a/services/powermanager/Android.bp
++++ b/services/powermanager/Android.bp
+@@ -13,6 +13,7 @@
+     srcs: [
+         "BatterySaverPolicyConfig.cpp",
+         "CoolingDevice.cpp",
++        "LegacyPowerManager.cpp",
+         "ParcelDuration.cpp",
+         "PowerHalController.cpp",
+         "PowerHalLoader.cpp",
+--- /dev/null
++++ b/services/powermanager/LegacyPowerManager.cpp
+@@ -0,0 +1,78 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <android/os/IPowerManager.h>
++#include <powermanager/LegacyPowerManager.h>
++
++#include <vector>
++
++namespace android {
++namespace {
++
++status_t legacyStatus(const binder::Status& status) {
++    if (status.isOk()) return OK;
++    return status.transactionError() != OK ? status.transactionError() : UNKNOWN_ERROR;
++}
++
++class LegacyPowerManager final : public BpInterface<IPowerManager> {
++public:
++    explicit LegacyPowerManager(const sp<IBinder>& binder)
++          : BpInterface<IPowerManager>(binder),
++            mService(interface_cast<os::IPowerManager>(binder)) {}
++
++    status_t acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag,
++                            const String16& packageName) override {
++        // A negative work UID means the caller's UID, as with the old API's
++        // absent WorkSource. -1 is Display.INVALID_DISPLAY; no callback is used.
++        return acquireWakeLockWithUid(flags, lock, tag, packageName, -1);
++    }
++
++    status_t acquireWakeLockWithUid(int flags, const sp<IBinder>& lock, const String16& tag,
++                                   const String16& packageName, int uid) override {
++        return legacyStatus(mService->acquireWakeLockWithUid(lock, flags, tag, packageName,
++                                                           uid, -1, nullptr));
++    }
++
++    status_t releaseWakeLock(const sp<IBinder>& lock, int flags) override {
++        return legacyStatus(mService->releaseWakeLock(lock, flags));
++    }
++
++    status_t updateWakeLockUids(const sp<IBinder>& lock, int len, const int* uids) override {
++        if (len < 0 || (len > 0 && uids == nullptr)) return BAD_VALUE;
++        std::vector<int32_t> workUids;
++        if (len > 0) workUids.assign(uids, uids + len);
++        return legacyStatus(mService->updateWakeLockUids(lock, workUids));
++    }
++
++private:
++    const sp<os::IPowerManager> mService;
++};
++
++} // namespace
++
++IPowerManager::IPowerManager() = default;
++IPowerManager::~IPowerManager() = default;
++
++const String16& IPowerManager::getInterfaceDescriptor() const {
++    return os::IPowerManager::descriptor;
++}
++
++sp<IPowerManager> IPowerManager::asInterface(const sp<IBinder>& binder) {
++    if (binder == nullptr) return nullptr;
++    return sp<LegacyPowerManager>::make(binder);
++}
++
++} // namespace android
+--- /dev/null
++++ b/services/powermanager/include/powermanager/LegacyPowerManager.h
+@@ -0,0 +1,41 @@
++/*
++ * Copyright (C) 2011 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++#pragma once
++
++#include <binder/IInterface.h>
++#include <utils/Errors.h>
++#include <utils/String16.h>
++
++namespace android {
++
++// Android 4.4 C++ ABI used by MSM8974's libmm-abl.so. This is an in-process
++// adapter to the generated android::os::IPowerManager, not an old wire protocol.
++class IPowerManager : public IInterface {
++public:
++    static sp<IPowerManager> asInterface(const sp<IBinder>& binder);
++    virtual const String16& getInterfaceDescriptor() const;
++    IPowerManager();
++    ~IPowerManager() override;
++
++    virtual status_t acquireWakeLock(int flags, const sp<IBinder>& lock, const String16& tag,
++                                    const String16& packageName) = 0;
++    virtual status_t acquireWakeLockWithUid(int flags, const sp<IBinder>& lock, const String16& tag,
++                                           const String16& packageName, int uid) = 0;
++    virtual status_t releaseWakeLock(const sp<IBinder>& lock, int flags) = 0;
++    virtual status_t updateWakeLockUids(const sp<IBinder>& lock, int len, const int* uids) = 0;
++};
++
++} // namespace android

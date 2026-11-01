@@ -1,0 +1,36 @@
+diff --git a/libwifi_hal/Android.bp b/libwifi_hal/Android.bp
+index cc8157b..cea69c5 100644
+--- a/libwifi_hal/Android.bp
++++ b/libwifi_hal/Android.bp
+@@ -159,7 +159,9 @@ wifi_cc_defaults {
+                 whole_static_libs: ["libwifi-hal-syna"],
+             },
+             qcwcn: {
+-                whole_static_libs: ["libwifi-hal-qcom"],
++                // Keep the Make-backed archive bridge name distinct from the
++                // same-named Soong defaults module in hardware/qcom/wlan.
++                whole_static_libs: ["libwifi-hal-qcom-prebuilt"],
+             },
+             mrvl: {
+                 // this is commented because none of the nexus devices
+@@ -330,9 +332,9 @@ wifi_makefile_goal {
+ // libwifi-hal-qcom
+ 
+ wifi_cc_prebuilt_library_static {
+-    name: "libwifi-hal-qcom",
++    name: "libwifi-hal-qcom-prebuilt",
+     proprietary: true,
+-    srcs: [":make-libwifi-hal-qcom"],
++    srcs: [":make-libwifi-hal-qcom-prebuilt"],
+     compile_multilib: "first",
+     installable: false,
+     licenses: ["libwifi_hal_apache20_license", "libwifi_hal_bsd_license"],
+@@ -347,7 +349,7 @@ wifi_cc_prebuilt_library_static {
+ }
+ 
+ wifi_makefile_goal {
+-    name: "make-libwifi-hal-qcom",
++    name: "make-libwifi-hal-qcom-prebuilt",
+     product_out_path: "obj/STATIC_LIBRARIES/libwifi-hal-qcom_intermediates/libwifi-hal-qcom.a",
+     enabled: false,
+     soong_config_variables: {

@@ -1,0 +1,18 @@
+diff --git a/src/java/com/android/internal/telephony/RIL.java b/src/java/com/android/internal/telephony/RIL.java
+--- a/src/java/com/android/internal/telephony/RIL.java
++++ b/src/java/com/android/internal/telephony/RIL.java
+@@ -1254,6 +1254,14 @@
+             return true;
+         }
+ 
++        // Older devices expose the monolithic HIDL IRadio, rather than the
++        // split AIDL services. Keep its existing proxy fallback available for
++        // devices that explicitly opt in; IMS has no equivalent HIDL service.
++        if (service != HAL_SERVICE_IMS
++                && SystemProperties.getBoolean("ro.vendor.radio.legacy_hidl", false)) {
++            return true;
++        }
++
+         switch (service) {
+             case HAL_SERVICE_DATA:
+                 serviceName = android.hardware.radio.data.IRadioData.DESCRIPTOR;

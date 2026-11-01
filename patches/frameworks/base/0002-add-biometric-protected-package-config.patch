@@ -1,0 +1,27 @@
+diff --git a/core/res/res/values/config.xml b/core/res/res/values/config.xml
+index 0a4fc6515..4358384dc 100644
+--- a/core/res/res/values/config.xml
++++ b/core/res/res/values/config.xml
+@@ -5554,6 +5554,10 @@
+     <string-array name="config_biometric_sensors" translatable="false" >
+         <!-- <item>0:2:15</item>  ID0:Fingerprint:Strong -->
+     </string-array>
++    <!-- List of packages that require biometric authentication before they can be disabled,
++         force-stopped, or have their updates uninstalled. Keep the default empty; device overlays
++         may supply package names when they provide a supported biometric protection policy. -->
++    <string-array name="config_biometric_protected_package_names" translatable="false" />
+     <!--If true, allows the device to load udfps components on older HIDL implementations -->
+     <bool name="allow_test_udfps" translatable="false" >false</bool>
+ 
+diff --git a/core/res/res/values/symbols.xml b/core/res/res/values/symbols.xml
+index a1804672d..701688a7d 100644
+--- a/core/res/res/values/symbols.xml
++++ b/core/res/res/values/symbols.xml
+@@ -5375,4 +5375,7 @@
+   <java-symbol type="string" name="config_defaultContextualSearchKey" />
+   <java-symbol type="string" name="config_defaultContextualSearchEnabled" />
+   <java-symbol type="string" name="config_defaultContextualSearchLegacyEnabled" />
++
++  <!-- Shared with Settings to allow device overlays to protect biometric packages. -->
++  <java-symbol type="array" name="config_biometric_protected_package_names" />
+ </resources>

@@ -1,0 +1,55 @@
+--- /dev/null
++++ b/tests/Android.bp
+@@ -0,0 +1,8 @@
++// Manual diagnostics; deliberately not installed in the ROM.
++cc_binary {
++    name: "virgo_legacy_compat_probe",
++    installable: false,
++    srcs: ["legacy_compat_probe.cpp"],
++    shared_libs: ["libbinder", "libpowermanager", "libutils", "libdl"],
++    cflags: ["-Wall", "-Werror"],
++}
+--- /dev/null
++++ b/tests/legacy_compat_probe.cpp
+@@ -0,0 +1,41 @@
++#include <binder/Binder.h>
++#include <binder/IServiceManager.h>
++#include <powermanager/LegacyPowerManager.h>
++#include <dlfcn.h>
++#include <stdio.h>
++#include <string.h>
++#include <unistd.h>
++
++int main(int argc, char** argv) {
++    if (argc == 2 && strcmp(argv[1], "perf") == 0) {
++        void* client = dlopen("/vendor/lib/libqti-perfd-client.so", RTLD_NOW);
++        if (!client) { fprintf(stderr, "%s\n", dlerror()); return 1; }
++        auto acquire = reinterpret_cast<int (*)(int, int, int*, int)>(
++                dlsym(client, "perf_lock_acq"));
++        auto release = reinterpret_cast<int (*)(int)>(dlsym(client, "perf_lock_rel"));
++        if (!acquire || !release) return 2;
++        int resources[] = {0x703, 0x2fe, 0x3fe, 0x4fe, 0x5fe};
++        const int handle = acquire(0, 1000, resources, 5);
++        printf("perf_lock_acq=%d\n", handle);
++        fflush(stdout);
++        if (handle <= 0) return 3;
++        usleep(200000);
++        const int result = release(handle);
++        printf("perf_lock_rel=%d\n", result);
++        return result < 0 ? 4 : 0;
++    }
++    using namespace android;
++    auto binder = defaultServiceManager()->checkService(String16("power"));
++    auto power = IPowerManager::asInterface(binder);
++    if (!power) return 5;
++    sp<IBinder> token = sp<BBinder>::make();
++    status_t result = power->acquireWakeLock(1, token,
++            String16("VirgoLegacyPowerProbe"), String16("android"));
++    printf("acquireWakeLock=%d\n", result);
++    fflush(stdout);
++    if (result != OK) return 6;
++    sleep(5);
++    result = power->releaseWakeLock(token, 0);
++    printf("releaseWakeLock=%d\n", result);
++    return result == OK ? 0 : 7;
++}

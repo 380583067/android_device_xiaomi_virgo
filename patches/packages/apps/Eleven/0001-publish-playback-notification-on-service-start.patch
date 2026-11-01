@@ -1,0 +1,13 @@
+diff --git a/src/org/lineageos/eleven/MusicPlaybackService.java b/src/org/lineageos/eleven/MusicPlaybackService.java
+--- a/src/org/lineageos/eleven/MusicPlaybackService.java
++++ b/src/org/lineageos/eleven/MusicPlaybackService.java
+@@ -921,6 +921,9 @@
+         // Make sure the service will shut down on its own if it was
+         // just started but not bound to and nothing is playing
+         if (mIsSupposedToBePlaying || mPausedByTransientLossOfFocus) {
++            // Bound playback may have notified before mServiceStartId was set.
++            // Publish the foreground notification now to satisfy its deadline.
++            updateNotification();
+             cancelShutdown();
+             return START_STICKY;
+         } else {

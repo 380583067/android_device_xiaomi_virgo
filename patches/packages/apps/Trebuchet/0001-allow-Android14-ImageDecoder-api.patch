@@ -1,0 +1,25 @@
+diff --git a/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java b/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java
+index 61f6be2..658afa6 100644
+--- a/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java
++++ b/quickstep/src/com/android/quickstep/QuickstepProcessInitializer.java
+@@ -83,8 +83,18 @@ public class QuickstepProcessInitializer extends MainProcessInitializer {
+         // Get the allowed mime types from the resources.
+         Set<String> allowedMimeTypes = Set.of(context.getResources().getStringArray(
+                 R.array.allowed_image_mime_types));
+-        ImageDecoder.setDefaultProcessListener(
+-                new LauncherProcessImageListener(maxMemoryBytes, allowedMimeTypes));
++        try {
++            // Newer Android branches provide this process-wide hook. Android 14 does not, so use
++            // reflection to keep the optional Launcher memory cap without making A14 fail to
++            // compile; per-decode ImageDecoder listeners remain available on that platform.
++            ImageDecoder.class.getMethod("setDefaultProcessListener",
++                    ImageDecoder.OnHeaderDecodedListener.class).invoke(null,
++                            new LauncherProcessImageListener(maxMemoryBytes, allowedMimeTypes));
++        } catch (NoSuchMethodException e) {
++            // The Android 14 ImageDecoder API has no process-wide listener.
++        } catch (ReflectiveOperationException e) {
++            Log.w(TAG, "Unable to register the optional ImageDecoder process listener", e);
++        }
+     }
+ 
+ }

@@ -1,0 +1,16 @@
+--- a/src/com/android/settings/fuelgauge/batteryusage/BatteryEntry.java
++++ b/src/com/android/settings/fuelgauge/batteryusage/BatteryEntry.java
+@@ -648,6 +648,13 @@
+ 
+     private static double safeGetConsumedPower(
+             final UidBatteryConsumer uidBatteryConsumer, final Dimensions dimension) {
++        // Historical/aggregated snapshots may omit process-state columns.
++        // The CPU component exposes those keys when that optional data exists.
++        if (dimension.processState != BatteryConsumer.PROCESS_STATE_ANY
++                && uidBatteryConsumer.getKey(
++                        BatteryConsumer.POWER_COMPONENT_CPU, dimension.processState) == null) {
++            return 0.0d;
++        }
+         try {
+             return uidBatteryConsumer.getConsumedPower(dimension);
+         } catch (IllegalArgumentException e) {

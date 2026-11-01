@@ -1,0 +1,13 @@
+diff --git a/manifest.xml b/manifest.xml
+index 0000000..0000000 100644
+--- a/manifest.xml
++++ b/manifest.xml
+@@ -1,4 +1,7 @@
+-<manifest version="1.0" type="device" target-level="legacy">
++<manifest version="1.0" type="device" target-level="5">
++    <!-- MSM8974's Android 14 port targets FCM 5: the platform has no
++         framework matrix for the legacy level, and these declared HALs are
++         validated against the level-5 compatibility matrix. -->
+     <!-- The Qualcomm primary audio HAL remains legacy, but Android 14's
+          supported HIDL wrapper is 6.0; keep this declaration matched to the
+          implementation and effects modules installed by msm8974-common.mk. -->

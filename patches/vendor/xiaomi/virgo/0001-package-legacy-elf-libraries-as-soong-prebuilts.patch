@@ -1,0 +1,53 @@
+diff --git a/Android.bp b/Android.bp
+index 37601b1..69a128e 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -5,3 +5,33 @@
+ soong_namespace {
+ }
+ 
++// Android 14 rejects ELF libraries copied through PRODUCT_COPY_FILES. These
++// modules preserve each legacy blob name and vendor/lib subdirectory.
++cc_prebuilt_library_shared {
++    name: "virgo_vendor_blob_libsensors_leo",
++    owner: "xiaomi",
++    srcs: ["proprietary/vendor/lib/libsensors.leo.so"],
++    stem: "libsensors.leo",
++    strip: {
++        none: true,
++    },
++    compile_multilib: "32",
++    check_elf_files: false,
++    prefer: true,
++    soc_specific: true,
++}
++
++cc_prebuilt_library_shared {
++    name: "virgo_vendor_blob_libinvensense_hal",
++    owner: "xiaomi",
++    srcs: ["proprietary/vendor/lib/libinvensense_hal.so"],
++    stem: "libinvensense_hal",
++    strip: {
++        none: true,
++    },
++    compile_multilib: "32",
++    check_elf_files: false,
++    prefer: true,
++    soc_specific: true,
++}
++
+diff --git a/virgo-vendor.mk b/virgo-vendor.mk
+index bed71eb..200b393 100644
+--- a/virgo-vendor.mk
++++ b/virgo-vendor.mk
+@@ -5,6 +5,7 @@
+ PRODUCT_SOONG_NAMESPACES += \
+     vendor/xiaomi/virgo
+ 
+-PRODUCT_COPY_FILES += \
+-    vendor/xiaomi/virgo/proprietary/vendor/lib/libsensors.leo.so:$(TARGET_COPY_OUT_VENDOR)/lib/libsensors.leo.so \
+-    vendor/xiaomi/virgo/proprietary/vendor/lib/libinvensense_hal.so:$(TARGET_COPY_OUT_VENDOR)/lib/libinvensense_hal.so
++# Android 14-compatible Soong modules for the legacy vendor ELF libraries.
++PRODUCT_PACKAGES += \
++    virgo_vendor_blob_libinvensense_hal \
++    virgo_vendor_blob_libsensors_leo

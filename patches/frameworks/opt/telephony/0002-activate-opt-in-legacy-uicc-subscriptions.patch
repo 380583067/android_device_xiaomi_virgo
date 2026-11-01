@@ -1,0 +1,150 @@
+diff --git a/src/java/com/android/internal/telephony/uicc/UiccController.java b/src/java/com/android/internal/telephony/uicc/UiccController.java
+--- a/src/java/com/android/internal/telephony/uicc/UiccController.java
++++ b/src/java/com/android/internal/telephony/uicc/UiccController.java
+@@ -34,6 +34,7 @@
+ import android.os.Build;
+ import android.os.Handler;
+ import android.os.Message;
++import android.os.SystemProperties;
+ import android.os.RegistrantList;
+ import android.preference.PreferenceManager;
+ import android.sysprop.TelephonyProperties;
+@@ -149,6 +150,7 @@
+     private static final int EVENT_SIM_REFRESH = 8;
+     private static final int EVENT_EID_READY = 9;
+     private static final int EVENT_MULTI_SIM_CONFIG_CHANGED = 10;
++    private static final int EVENT_LEGACY_UICC_ACTIVATION_DONE = 11;
+     // NOTE: any new EVENT_* values must be added to eventToString.
+ 
+     @NonNull
+@@ -161,6 +163,12 @@
+     public UiccSlot[] mUiccSlots;
+     private int[] mPhoneIdToSlotId;
+     private boolean mIsSlotStatusSupported = true;
++    // Old Qualcomm RILs require explicit subscription selection before a
++    // detected SIM/USIM acquires a GSM application index. Keep this opt-in.
++    private final boolean mLegacyUiccActivation = Arrays.asList(
++            SystemProperties.get("ro.telephony.ril.config", "").split(","))
++            .contains("simactivation");
++    private boolean[] mLegacyUiccActivationRequested;
+ 
+     // This maps the externally exposed card ID (int) to the internal card ID string (ICCID/EID).
+     // The array index is the card ID (int).
+@@ -278,6 +286,7 @@
+ 
+         mUiccSlots = new UiccSlot[numPhysicalSlots];
+         mPhoneIdToSlotId = new int[mCis.length];
++        mLegacyUiccActivationRequested = new boolean[mCis.length];
+         int supportedModemCount = mTelephonyManager.getSupportedModemCount();
+         mSimCardState = new int[supportedModemCount];
+         mSimApplicationState = new int[supportedModemCount];
+@@ -288,6 +297,9 @@
+         for (int i = 0; i < mCis.length; i++) {
+             mCis[i].registerForIccStatusChanged(this, EVENT_ICC_STATUS_CHANGED, i);
+             mCis[i].registerForAvailable(this, EVENT_RADIO_AVAILABLE, i);
++            if (mLegacyUiccActivation) {
++                mCis[i].registerForOn(this, EVENT_RADIO_ON, i);
++            }
+             mCis[i].registerForNotAvailable(this, EVENT_RADIO_UNAVAILABLE, i);
+             mCis[i].registerForIccRefresh(this, EVENT_SIM_REFRESH, i);
+         }
+@@ -613,6 +625,14 @@
+                     if (DBG) log("Received EVENT_GET_ICC_STATUS_DONE");
+                     onGetIccCardStatusDone(ar, phoneId);
+                     break;
++                case EVENT_LEGACY_UICC_ACTIVATION_DONE:
++                    logWithLocalLog("Legacy UICC activation phoneId=" + phoneId
++                            + " exception=" + ar.exception);
++                    if (ar.exception == null) {
++                        mCis[phoneId].getIccCardStatus(obtainMessage(
++                                EVENT_GET_ICC_STATUS_DONE, phoneId));
++                    }
++                    break;
+                 case EVENT_SLOT_STATUS_CHANGED:
+                 case EVENT_GET_SLOT_STATUS_DONE:
+                     if (DBG) {
+@@ -622,6 +642,7 @@
+                     break;
+                 case EVENT_RADIO_UNAVAILABLE:
+                     if (DBG) log("EVENT_RADIO_UNAVAILABLE, dispose card");
++                    mLegacyUiccActivationRequested[phoneId] = false;
+                     sLastSlotStatus = null;
+                     UiccSlot uiccSlot = getUiccSlotForPhone(phoneId);
+                     if (uiccSlot != null) {
+@@ -658,6 +679,8 @@
+ 
+         // Resize array.
+         mPhoneIdToSlotId = copyOf(mPhoneIdToSlotId, newActiveModemCount);
++        mLegacyUiccActivationRequested = Arrays.copyOf(
++                mLegacyUiccActivationRequested, newActiveModemCount);
+ 
+         // Register for new active modem for ss -> ds switch.
+         // For ds -> ss switch, there's no need to unregister as the mCis should unregister
+@@ -666,6 +689,9 @@
+             mPhoneIdToSlotId[i] = INVALID_SLOT_ID;
+             mCis[i].registerForIccStatusChanged(this, EVENT_ICC_STATUS_CHANGED, i);
+             mCis[i].registerForAvailable(this, EVENT_RADIO_AVAILABLE, i);
++            if (mLegacyUiccActivation) {
++                mCis[i].registerForOn(this, EVENT_RADIO_ON, i);
++            }
+             mCis[i].registerForNotAvailable(this, EVENT_RADIO_UNAVAILABLE, i);
+             mCis[i].registerForIccRefresh(this, EVENT_SIM_REFRESH, i);
+         }
+@@ -705,6 +731,7 @@
+             case EVENT_SIM_REFRESH: return "SIM_REFRESH";
+             case EVENT_EID_READY: return "EID_READY";
+             case EVENT_MULTI_SIM_CONFIG_CHANGED: return "MULTI_SIM_CONFIG_CHANGED";
++            case EVENT_LEGACY_UICC_ACTIVATION_DONE: return "LEGACY_UICC_ACTIVATION_DONE";
+             default: return "UNKNOWN(" + event + ")";
+         }
+     }
+@@ -1016,6 +1043,41 @@
+         });
+     }
+ 
++    private void maybeActivateLegacyUicc(IccCardStatus status, int phoneId, int slotId) {
++        if (!mLegacyUiccActivation) return;
++        if (status.mCardState == IccCardStatus.CardState.CARDSTATE_ABSENT) {
++            mLegacyUiccActivationRequested[phoneId] = false;
++            return;
++        }
++        if (status.mGsmUmtsSubscriptionAppIndex >= 0
++                || status.mCdmaSubscriptionAppIndex >= 0) {
++            // Do not undo a later explicit application disable on this card.
++            mLegacyUiccActivationRequested[phoneId] = true;
++            return;
++        }
++        if (status.mCardState != IccCardStatus.CardState.CARDSTATE_PRESENT
++                || mLegacyUiccActivationRequested[phoneId]
++                || mCis[phoneId].getRadioState() != TelephonyManager.RADIO_POWER_ON
++                || status.mApplications == null) {
++            return;
++        }
++        for (int appIndex = 0; appIndex < status.mApplications.length; appIndex++) {
++            IccCardApplicationStatus app = status.mApplications[appIndex];
++            if (app == null || (app.app_type != IccCardApplicationStatus.AppType.APPTYPE_SIM
++                    && app.app_type != IccCardApplicationStatus.AppType.APPTYPE_USIM)) {
++                continue;
++            }
++            // One request per card/radio lifetime: repeated ICC indications must
++            // not create a provisioning loop, including on unsupported RILs.
++            mLegacyUiccActivationRequested[phoneId] = true;
++            logWithLocalLog("Activating legacy UICC phoneId=" + phoneId + " slot="
++                    + slotId + " app=" + appIndex);
++            mCis[phoneId].setUiccSubscription(slotId, appIndex, phoneId, 1,
++                    obtainMessage(EVENT_LEGACY_UICC_ACTIVATION_DONE, phoneId));
++            return;
++        }
++    }
++
+     private synchronized void onGetIccCardStatusDone(AsyncResult ar, Integer index) {
+         if (ar.exception != null) {
+             Rlog.e(LOG_TAG,"Error getting ICC status. "
+@@ -1063,6 +1125,7 @@
+         }
+ 
+         mUiccSlots[slotId].update(mCis[index], status, index, slotId);
++        maybeActivateLegacyUicc(status, index, slotId);
+ 
+         UiccCard card = mUiccSlots[slotId].getUiccCard();
+         if (card == null) {

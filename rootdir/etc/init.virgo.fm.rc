@@ -1,0 +1,7 @@
+# WCNSS FM firmware is part of the modem/WCNSS firmware image.
+# libfmjni's QCOM_NO_FM_FIRMWARE path signals these two lifecycle properties.
+on property:hw.fm.init=1
+    write /sys/module/radio_iris_transport/parameters/fmsmd_set 1
+
+on property:hw.fm.init=0
+    write /sys/module/radio_iris_transport/parameters/fmsmd_set 0

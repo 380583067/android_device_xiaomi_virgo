@@ -1,0 +1,29 @@
+--- a/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
++++ b/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
+@@ -898,8 +898,14 @@
+     std::unique_lock<std::recursive_mutex> lock(mStateMutex);
+ 
+     ALOGV("[%" PRIu64 "] setOutputBuffer(%p, %d)", mId, buffer, releaseFence);
++    // HWC2 leaves ownership of this fence with the caller (unlike layer and
++    // client-target acquire fences). The HIDL wrapper closes it on return.
++    const int ownedFence = releaseFence >= 0 ? ::dup(releaseFence) : -1;
++    if (releaseFence >= 0 && ownedFence < 0) {
++        return Error::NoResources;
++    }
+     mOutputBuffer.setBuffer(buffer);
+-    mOutputBuffer.setFence(releaseFence);
++    mOutputBuffer.setFence(ownedFence);
+     return Error::None;
+ }
+ 
+@@ -1913,6 +1919,10 @@
+ 
+     // We will set this to the correct value in set
+     hwc1Target.acquireFenceFd = -1;
++    // The previous target release fence was consumed by addReleaseFences().
++    // HWC1 implementations may only populate an unset release fence; leaving
++    // the closed descriptor here can close an unrelated reused FD next frame.
++    hwc1Target.releaseFenceFd = -1;
+ }
+ 
+ // Layer functions

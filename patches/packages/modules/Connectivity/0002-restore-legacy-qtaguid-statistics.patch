@@ -1,0 +1,472 @@
+--- a/service-t/jni/com_android_server_net_NetworkStatsFactory.cpp
++++ b/service-t/jni/com_android_server_net_NetworkStatsFactory.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include <errno.h>
+ #include <inttypes.h>
++#include <stdio.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
+ #include <vector>
+@@ -33,6 +34,7 @@
+ #include <utils/misc.h>
+ 
+ #include "android-base/unique_fd.h"
++#include "android-base/properties.h"
+ #include "bpf/BpfUtils.h"
+ #include "netdbpf/BpfNetworkStats.h"
+ 
+@@ -170,10 +172,45 @@
+     return 0;
+ }
+ 
++// The non-BPF kernels used by older devices expose cumulative xt_qtaguid
++// counters. Keep the tag's upper 32 bits, matching NetworkStatsFactory.kernelToTag.
++static int readLegacyNetworkStats(std::vector<stats_line>& lines, bool detail) {
++    FILE* file = fopen(detail ? "/proc/net/xt_qtaguid/stats"
++                              : "/proc/net/xt_qtaguid/iface_stat_fmt", "re");
++    if (file == nullptr) return -1;
++    char buffer[1024];
++    while (fgets(buffer, sizeof(buffer), file) != nullptr) {
++        stats_line line = {};
++        uint32_t index;
++        uint64_t tag;
++        int matched;
++        if (detail) {
++            matched = sscanf(buffer, "%" SCNu32 " %31s 0x%" SCNx64 " %" SCNu32 " %" SCNu32
++                    " %" SCNd64 " %" SCNd64 " %" SCNd64 " %" SCNd64,
++                    &index, line.iface, &tag, &line.uid, &line.set,
++                    &line.rxBytes, &line.rxPackets, &line.txBytes, &line.txPackets);
++            if (matched != 9) continue; // includes the column header
++            line.tag = static_cast<uint32_t>(tag >> 32);
++        } else {
++            matched = sscanf(buffer, "%31s %" SCNd64 " %" SCNd64 " %" SCNd64 " %" SCNd64,
++                    line.iface, &line.rxBytes, &line.rxPackets, &line.txBytes, &line.txPackets);
++            if (matched != 5) continue;
++            line.uid = static_cast<uint32_t>(bpf::UID_ALL);
++            line.set = static_cast<uint32_t>(bpf::SET_ALL);
++        }
++        lines.push_back(line);
++    }
++    const int result = ferror(file) ? -1 : 0;
++    fclose(file);
++    return result;
++}
++
+ static int readNetworkStatsDetail(JNIEnv* env, jclass clazz, jobject stats) {
+     std::vector<stats_line> lines;
+ 
+-    if (parseBpfNetworkStatsDetail(&lines) < 0)
++    const bool bpfEnabled = base::GetBoolProperty("ro.kernel.ebpf.supported", true);
++    if ((bpfEnabled ? parseBpfNetworkStatsDetail(&lines)
++                    : readLegacyNetworkStats(lines, true)) < 0)
+         return -1;
+ 
+     return statsLinesToNetworkStats(env, clazz, stats, lines);
+@@ -182,7 +219,9 @@
+ static int readNetworkStatsDev(JNIEnv* env, jclass clazz, jobject stats) {
+     std::vector<stats_line> lines;
+ 
+-    if (parseBpfNetworkStatsDev(&lines) < 0)
++    const bool bpfEnabled = base::GetBoolProperty("ro.kernel.ebpf.supported", true);
++    if ((bpfEnabled ? parseBpfNetworkStatsDev(&lines)
++                    : readLegacyNetworkStats(lines, false)) < 0)
+             return -1;
+ 
+     return statsLinesToNetworkStats(env, clazz, stats, lines);
+--- a/service-t/jni/com_android_server_net_NetworkStatsService.cpp
++++ b/service-t/jni/com_android_server_net_NetworkStatsService.cpp
+@@ -22,6 +22,8 @@
+ #include <fcntl.h>
+ #include <inttypes.h>
+ #include <jni.h>
++#include <string.h>
++#include <unistd.h>
+ #include <nativehelper/ScopedUtfChars.h>
+ #include <sys/stat.h>
+ #include <sys/types.h>
+@@ -29,6 +31,8 @@
+ #include <utils/misc.h>
+ 
+ #include "bpf/BpfUtils.h"
++#include "android-base/properties.h"
++#include "android-base/unique_fd.h"
+ #include "netdbpf/BpfNetworkStats.h"
+ #include "netdbpf/NetworkTraceHandler.h"
+ 
+@@ -42,7 +46,37 @@
+ static const char* QTAGUID_IFACE_STATS = "/proc/net/xt_qtaguid/iface_stat_fmt";
+ static const char* QTAGUID_UID_STATS = "/proc/net/xt_qtaguid/stats";
+ 
++static bool useBpfStats() {
++    static const bool enabled = base::GetBoolProperty("ro.kernel.ebpf.supported", true);
++    return enabled;
++}
++
++static int writeLegacyCommand(const char* command) {
++    base::unique_fd fd(TEMP_FAILURE_RETRY(open("/proc/net/xt_qtaguid/ctrl",
++                                              O_WRONLY | O_CLOEXEC)));
++    if (fd.get() < 0) return -errno;
++    const size_t len = strlen(command);
++    const ssize_t written = TEMP_FAILURE_RETRY(write(fd.get(), command, len));
++    if (written < 0) return -errno;
++    return static_cast<size_t>(written) == len ? 0 : -EIO;
++}
++
++static jint nativeSetLegacyUidCounterSet(JNIEnv*, jclass, jint uid, jint set) {
++    if (uid < 0 || set < 0 || set > 1) return -EINVAL;
++    char command[64];
++    snprintf(command, sizeof(command), "s %d %d", set, uid);
++    return writeLegacyCommand(command);
++}
++
++static jint nativeDeleteLegacyUidStats(JNIEnv*, jclass, jint uid) {
++    if (uid < 0) return -EINVAL;
++    char command[64];
++    snprintf(command, sizeof(command), "d 0 %d", uid);
++    return writeLegacyCommand(command);
++}
++
+ static void nativeRegisterIface(JNIEnv* env, jclass clazz, jstring iface) {
++    if (!useBpfStats()) return;
+     ScopedUtfChars iface8(env, iface);
+     if (iface8.c_str() == nullptr) return;
+     bpfRegisterIface(iface8.c_str());
+@@ -142,7 +176,7 @@
+ static jobject nativeGetTotalStat(JNIEnv* env, jclass clazz) {
+     StatsValue stats = {};
+ 
+-    if (bpfGetIfaceStats(nullptr, &stats) == 0) {
++    if (useBpfStats() && bpfGetIfaceStats(nullptr, &stats) == 0) {
+         return statsValueToEntry(env, &stats);
+     } else {
+         if (parseIfaceStats(nullptr, &stats) == 0) {
+@@ -161,7 +195,7 @@
+ 
+     StatsValue stats = {};
+ 
+-    if (bpfGetIfaceStats(iface8.c_str(), &stats) == 0) {
++    if (useBpfStats() && bpfGetIfaceStats(iface8.c_str(), &stats) == 0) {
+         return statsValueToEntry(env, &stats);
+     } else {
+         if (parseIfaceStats(iface8.c_str(), &stats) == 0) {
+@@ -175,7 +209,7 @@
+ static jobject nativeGetUidStat(JNIEnv* env, jclass clazz, jint uid) {
+     StatsValue stats = {};
+ 
+-    if (bpfGetUidStats(uid, &stats) == 0) {
++    if (useBpfStats() && bpfGetUidStats(uid, &stats) == 0) {
+         return statsValueToEntry(env, &stats);
+     } else {
+         if (parseUidStats(uid, &stats) == 0) {
+@@ -191,6 +225,8 @@
+ }
+ 
+ static const JNINativeMethod gMethods[] = {
++        {"nativeSetLegacyUidCounterSet", "(II)I", (void*)nativeSetLegacyUidCounterSet},
++        {"nativeDeleteLegacyUidStats", "(I)I", (void*)nativeDeleteLegacyUidStats},
+         {
+             "nativeRegisterIface",
+             "(Ljava/lang/String;)V",
+--- a/service-t/src/com/android/server/net/BpfInterfaceMapHelper.java
++++ b/service-t/src/com/android/server/net/BpfInterfaceMapHelper.java
+@@ -16,6 +16,7 @@
+ package com.android.server.net;
+ 
+ import android.os.Build;
++import android.os.SystemProperties;
+ import android.system.ErrnoException;
+ import android.util.IndentingPrintWriter;
+ import android.util.Log;
+@@ -55,6 +56,7 @@
+     public static class Dependencies {
+         /** Create BpfMap for updating interface and index mapping. */
+         public IBpfMap<S32, InterfaceMapValue> getInterfaceMap() {
++            if (!SystemProperties.getBoolean("ro.kernel.ebpf.supported", true)) return null;
+             try {
+                 return new BpfMap<>(IFACE_INDEX_NAME_MAP_PATH,
+                     S32.class, InterfaceMapValue.class);
+@@ -67,6 +69,7 @@
+ 
+     /** get interface name by interface index from bpf map */
+     public String getIfNameByIndex(final int index) {
++        if (mIndexToIfaceBpfMap == null) return null;
+         try {
+             final InterfaceMapValue value = mIndexToIfaceBpfMap.getValue(new S32(index));
+             if (value == null) {
+@@ -86,6 +89,10 @@
+      * @param pw print writer
+      */
+     public void dump(final IndentingPrintWriter pw) {
++        if (mIndexToIfaceBpfMap == null) {
++            pw.println("BPF interface map unavailable (legacy kernel accounting)");
++            return;
++        }
+         pw.println("BPF map status:");
+         pw.increaseIndent();
+         BpfDump.dumpMapStatus(mIndexToIfaceBpfMap, pw, "IfaceIndexNameMap",
+--- a/service-t/src/com/android/server/net/NetworkStatsFactory.java
++++ b/service-t/src/com/android/server/net/NetworkStatsFactory.java
+@@ -27,6 +27,7 @@
+ import android.net.UnderlyingNetworkInfo;
+ import android.os.ServiceSpecificException;
+ import android.os.SystemClock;
++import android.os.SystemProperties;
+ 
+ import com.android.internal.annotations.GuardedBy;
+ import com.android.internal.annotations.VisibleForTesting;
+@@ -53,6 +54,7 @@
+     private final Context mContext;
+ 
+     private final BpfNetMaps mBpfNetMaps;
++    private final boolean mUseLegacyStats;
+ 
+     /**
+      * Guards persistent data access in this class
+@@ -79,6 +81,9 @@
+      */
+     @VisibleForTesting
+     public static class Dependencies {
++        public boolean useLegacyStats() {
++            return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++        }
+         /**
+          * Parse detailed statistics from bpf into given {@link NetworkStats} object. Values
+          * are expected to monotonically increase since device boot.
+@@ -155,7 +160,8 @@
+ 
+     @VisibleForTesting
+     public NetworkStatsFactory(@NonNull Context ctx, Dependencies deps) {
+-        mBpfNetMaps = deps.createBpfNetMaps(ctx);
++        mUseLegacyStats = deps.useLegacyStats();
++        mBpfNetMaps = mUseLegacyStats ? null : deps.createBpfNetMaps(ctx);
+         synchronized (mPersistentDataLock) {
+             mPersistSnapshot = new NetworkStats(SystemClock.elapsedRealtime(), -1);
+             mTunAnd464xlatAdjustedStats = new NetworkStats(SystemClock.elapsedRealtime(), -1);
+@@ -207,13 +213,18 @@
+             // Take a defensive copy. mPersistSnapshot is mutated in some cases below
+             final NetworkStats prev = mPersistSnapshot.clone();
+ 
+-            requestSwapActiveStatsMapLocked();
++            if (!mUseLegacyStats) requestSwapActiveStatsMapLocked();
+             // Stats are always read from the inactive map, so they must be read after the
+             // swap
+             final NetworkStats stats = mDeps.getNetworkStatsDetail();
+-            // BPF stats are incremental; fold into mPersistSnapshot.
+-            mPersistSnapshot.setElapsedRealtime(stats.getElapsedRealtime());
+-            mPersistSnapshot.combineAllValues(stats);
++            if (mUseLegacyStats) {
++                // xt_qtaguid counters are already cumulative. Adding each poll
++                // again would double-count traffic, unlike the swapped BPF maps.
++                mPersistSnapshot = stats;
++            } else {
++                mPersistSnapshot.setElapsedRealtime(stats.getElapsedRealtime());
++                mPersistSnapshot.combineAllValues(stats);
++            }
+ 
+             NetworkStats adjustedStats = adjustForTunAnd464Xlat(mPersistSnapshot, prev, vpnArray);
+ 
+--- a/service-t/src/com/android/server/net/NetworkStatsService.java
++++ b/service-t/src/com/android/server/net/NetworkStatsService.java
+@@ -140,6 +140,7 @@
+ import android.os.RemoteException;
+ import android.os.ServiceSpecificException;
+ import android.os.SystemClock;
++import android.os.SystemProperties;
+ import android.os.Trace;
+ import android.os.UserHandle;
+ import android.provider.DeviceConfig;
+@@ -434,6 +435,7 @@
+      */
+     private SparseIntArray mActiveUidCounterSet = new SparseIntArray();
+     private IBpfMap<S32, U8> mUidCounterSetMap = null;
++    private final boolean mUseLegacyStats;
+     private IBpfMap<CookieTagMapKey, CookieTagMapValue> mCookieTagMap = null;
+     private IBpfMap<StatsMapKey, StatsMapValue> mStatsMapA = null;
+     private IBpfMap<StatsMapKey, StatsMapValue> mStatsMapB = null;
+@@ -614,6 +616,7 @@
+         mStatsFactory = Objects.requireNonNull(factory, "missing factory");
+         mStatsObservers = Objects.requireNonNull(statsObservers, "missing NetworkStatsObservers");
+         mDeps = Objects.requireNonNull(deps, "missing Dependencies");
++        mUseLegacyStats = mDeps.useLegacyStats();
+         mStatsDir = mDeps.getOrCreateStatsDir();
+         if (!mStatsDir.exists()) {
+             throw new IllegalStateException("Persist data directory does not exist: " + mStatsDir);
+@@ -629,15 +632,17 @@
+                 mNetworkStatsSubscriptionsMonitor);
+         mLocationPermissionChecker = mDeps.makeLocationPermissionChecker(mContext);
+         mInterfaceMapHelper = mDeps.makeBpfInterfaceMapHelper();
+-        try {
+-            mUidCounterSetMap = mDeps.getUidCounterSetMap();
+-            mCookieTagMap = mDeps.getCookieTagMap();
+-            mStatsMapA = mDeps.getStatsMapA();
+-            mStatsMapB = mDeps.getStatsMapB();
+-            mAppUidStatsMap = mDeps.getAppUidStatsMap();
+-            mIfaceStatsMap = mDeps.getIfaceStatsMap();
+-        } catch(Throwable t) {
+-            android.util.Log.e("PHH", "Failed creating bpf maps", t);
++        if (!mUseLegacyStats) {
++            try {
++                mUidCounterSetMap = mDeps.getUidCounterSetMap();
++                mCookieTagMap = mDeps.getCookieTagMap();
++                mStatsMapA = mDeps.getStatsMapA();
++                mStatsMapB = mDeps.getStatsMapB();
++                mAppUidStatsMap = mDeps.getAppUidStatsMap();
++                mIfaceStatsMap = mDeps.getIfaceStatsMap();
++            } catch (Throwable t) {
++                android.util.Log.e("PHH", "Failed creating bpf maps", t);
++            }
+         }
+         // To prevent any possible races, the flag is not allowed to change until rebooting.
+         mSupportEventLogger = mDeps.supportEventLogger(mContext);
+@@ -662,6 +667,11 @@
+     // TODO: Move more stuff into dependencies object.
+     @VisibleForTesting
+     public static class Dependencies {
++        /** Select the cumulative xt_qtaguid backend on pre-BPF kernels. */
++        public boolean useLegacyStats() {
++            return !SystemProperties.getBoolean("ro.kernel.ebpf.supported", true);
++        }
++
+         /**
+          * Get legacy platform stats directory.
+          */
+@@ -1841,6 +1851,11 @@
+     }
+ 
+     private void setKernelCounterSet(int uid, int set) {
++        if (mUseLegacyStats) {
++            final int err = nativeSetLegacyUidCounterSet(uid, set);
++            if (err != 0) Log.e(TAG, "Failed setting xt_qtaguid counter set: " + err);
++            return;
++        }
+         if (mUidCounterSetMap == null) {
+             Log.wtf(TAG, "Fail to set UidCounterSet: Null bpf map");
+             return;
+@@ -2588,6 +2603,11 @@
+      * @param uid
+      */
+     private void deleteKernelTagData(int uid) {
++        if (mUseLegacyStats) {
++            final int err = nativeDeleteLegacyUidStats(uid);
++            if (err != 0) Log.e(TAG, "Failed deleting xt_qtaguid UID stats: " + err);
++            return;
++        }
+         if(mCookieTagMap == null) return;
+         try {
+             mCookieTagMap.forEach((key, value) -> {
+@@ -3067,6 +3087,10 @@
+ 
+     @GuardedBy("mStatsLock")
+     private void dumpIfaceStatsMapLocked(final IndentingPrintWriter pw) {
++        if (mIfaceStatsMap == null) {
++            pw.println("Interface BPF statistics unavailable");
++            return;
++        }
+         BpfDump.dumpMap(mIfaceStatsMap, pw, "mIfaceStatsMap",
+                 "ifaceIndex ifaceName rxBytes rxPackets txBytes txPackets",
+                 (key, value) -> {
+@@ -3432,6 +3456,8 @@
+ 
+     // TODO: Read stats by using BpfNetMapsReader.
+     private static native void nativeRegisterIface(String iface);
++    private static native int nativeSetLegacyUidCounterSet(int uid, int set);
++    private static native int nativeDeleteLegacyUidStats(int uid);
+     @Nullable
+     private static native NetworkStats.Entry nativeGetTotalStat();
+     @Nullable
+--- a/tests/unit/jni/Android.bp
++++ b/tests/unit/jni/Android.bp
+@@ -22,6 +22,7 @@
+     ],
+ 
+     shared_libs: [
++        "libbase",
+         "liblog",
+         "libnativehelper",
+         "libnetdutils",
+--- a/tests/unit/java/com/android/server/net/BpfInterfaceMapHelperTest.java
++++ b/tests/unit/java/com/android/server/net/BpfInterfaceMapHelperTest.java
+@@ -110,4 +110,12 @@
+         assertDumpContains(dump, "ifaceIndex=1 ifaceName=test1");
+         assertDumpContains(dump, "ifaceIndex=2 ifaceName=test2");
+     }
++
++    @Test
++    public void testUnavailableMap() {
++        mBpfMap = null;
++        mUpdater = new BpfInterfaceMapHelper(new TestDependencies());
++        assertNull(mUpdater.getIfNameByIndex(TEST_INDEX));
++        assertDumpContains(getDump(), "BPF interface map unavailable");
++    }
+ }
+--- a/tests/unit/java/com/android/server/net/NetworkStatsFactoryTest.java
++++ b/tests/unit/java/com/android/server/net/NetworkStatsFactoryTest.java
+@@ -37,6 +37,8 @@
+ import static org.mockito.ArgumentMatchers.any;
+ import static org.mockito.ArgumentMatchers.anyInt;
+ import static org.mockito.Mockito.doReturn;
++import static org.mockito.Mockito.never;
++import static org.mockito.Mockito.verify;
+ 
+ import android.content.Context;
+ import android.net.NetworkStats;
+@@ -98,6 +100,27 @@
+     @After
+     public void tearDown() throws Exception {
+         mFactory = null;
++    }
++
++    @Test
++    public void testLegacyCumulativePolls() throws Exception {
++        doReturn(true).when(mDeps).useLegacyStats();
++        mFactory = new NetworkStatsFactory(mContext, mDeps);
++        mFactory.updateUnderlyingNetworkInfos(new UnderlyingNetworkInfo[0]);
++        final NetworkStats first = new NetworkStats(1L, 1)
++                .insertEntry(TEST_IFACE, UID_RED, SET_DEFAULT, TAG_NONE,
++                        100L, 1L, 200L, 2L, 0L);
++        final NetworkStats next = new NetworkStats(2L, 1)
++                .insertEntry(TEST_IFACE, UID_RED, SET_DEFAULT, TAG_NONE,
++                        150L, 2L, 250L, 3L, 0L);
++        doReturn(first, first, next).when(mDeps).getNetworkStatsDetail();
++        assertValues(mFactory.readNetworkStatsDetail(), TEST_IFACE, UID_RED,
++                100L, 1L, 200L, 2L);
++        assertValues(mFactory.readNetworkStatsDetail(), TEST_IFACE, UID_RED,
++                100L, 1L, 200L, 2L);
++        assertValues(mFactory.readNetworkStatsDetail(), TEST_IFACE, UID_RED,
++                150L, 2L, 250L, 3L);
++        verify(mBpfNetMaps, never()).swapActiveStatsMap();
+     }
+ 
+     @Test
+--- a/tests/unit/java/com/android/server/net/NetworkStatsServiceTest.java
++++ b/tests/unit/java/com/android/server/net/NetworkStatsServiceTest.java
+@@ -449,6 +449,12 @@
+     }
+ 
+     class TestDependencies extends NetworkStatsService.Dependencies {
++        @Override
++        public boolean useLegacyStats() {
++            // These fixtures inject BPF maps, regardless of the test device.
++            return false;
++        }
++
+         private int mCompareStatsInvocation = 0;
+ 
+         @Override
+@@ -2812,6 +2818,15 @@
+         doTestDumpIfaceStatsMap("unknown");
+     }
+ 
++    @Test
++    public void testDumpUnavailableIfaceStatsMap() throws Exception {
++        final java.lang.reflect.Field field = NetworkStatsService.class.getDeclaredField(
++                "mIfaceStatsMap");
++        field.setAccessible(true);
++        field.set(mService, null);
++        assertDumpContains(getDump(), "Interface BPF statistics unavailable");
++    }
++
+     // Basic test to ensure event logger dump is called.
+     // Note that tests to ensure detailed correctness is done in the dedicated tests.
+     // See NetworkStatsEventLoggerTest.

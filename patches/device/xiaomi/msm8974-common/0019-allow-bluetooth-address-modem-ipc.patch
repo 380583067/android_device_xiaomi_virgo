@@ -1,0 +1,14 @@
+--- a/sepolicy/bdaddr.te
++++ b/sepolicy/bdaddr.te
+@@ -6,6 +6,11 @@
+ 
+ # Allow bdaddr to communicate with qmuxd via qmux_radio socket
+ qmux_socket(bdaddr)
++
++# libqminvapi discovers the modem NV service over the MSM IPC router. Without
++# its control socket, initialization fails before the address query is usable.
++allow bdaddr self:socket create_socket_perms;
++allowxperm bdaddr self:socket ioctl msm_sock_ipc_ioctls;
+ 
+ # Allow access to /data/misc/bluetooth
+ allow bdaddr bluetooth_data_file:dir w_dir_perms;

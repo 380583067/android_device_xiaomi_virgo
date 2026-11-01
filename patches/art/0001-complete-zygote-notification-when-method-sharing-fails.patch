@@ -1,0 +1,16 @@
+diff --git a/runtime/jit/jit.cc b/runtime/jit/jit.cc
+index 90e9095..ec865d0 100644
+--- a/runtime/jit/jit.cc
++++ b/runtime/jit/jit.cc
+@@ -518,6 +518,11 @@ void Jit::AddMemoryUsage(ArtMethod* method, size_t bytes) {
+ 
+ void Jit::NotifyZygoteCompilationDone() {
+   if (fd_methods_ == -1) {
++    // Shared boot image methods are optional. Initialization can fail on
++    // kernels without memfd seals, but the compilation state must still
++    // become terminal before PostZygoteFork checks it.
++    LOG(WARNING) << "Boot image method sharing unavailable; using existing mappings";
++    code_cache_->GetZygoteMap()->SetCompilationState(ZygoteCompilationState::kNotifiedFailure);
+     return;
+   }
+ 

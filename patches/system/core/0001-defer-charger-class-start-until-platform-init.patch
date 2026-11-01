@@ -1,0 +1,15 @@
+diff --git a/rootdir/init.rc b/rootdir/init.rc
+index 9e8ef9e..d0fd449 100644
+--- a/rootdir/init.rc
++++ b/rootdir/init.rc
+@@ -1222,8 +1222,8 @@ on nonencrypted
+ on property:sys.init_log_level=*
+     loglevel ${sys.init_log_level}
+ 
+-on charger
+-    class_start charger
++# Devices with platform-specific charger setup should start the charger class
++# from their vendor init after that setup has completed.
+ 
+ on property:sys.boot_completed=1
+     bootchart stop

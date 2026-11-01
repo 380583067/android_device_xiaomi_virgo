@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.lineageos.virgo.networkstack.overlay">
+    <overlay android:isStatic="true" android:priority="800"
+        android:targetPackage="com.android.networkstack" android:targetName="NetworkStackConfig" />
+</manifest>

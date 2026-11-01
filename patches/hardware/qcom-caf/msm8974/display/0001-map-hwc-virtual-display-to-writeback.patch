@@ -1,0 +1,56 @@
+diff --git a/liboverlay/overlay.h b/liboverlay/overlay.h
+--- a/liboverlay/overlay.h
++++ b/liboverlay/overlay.h
+@@ -30,6 +30,8 @@
+ #ifndef OVERLAY_H
+ #define OVERLAY_H
+ 
++#include <hardware/hwcomposer_defs.h>
++
+ #include "overlayUtils.h"
+ #include "mdp_version.h"
+ #include "utils/threads.h"
+@@ -292,8 +294,11 @@
+ }
+ 
+ inline int Overlay::getFbForDpy(const int& dpy) {
+-    OVASSERT(dpy >= 0 && dpy < DPY_MAX, "Invalid dpy %d", dpy);
+-    return sDpyFbMap[dpy];
++    // HWC reserves extra physical IDs before its virtual display. Overlay's
++    // framebuffer map still has only primary, external and writeback entries.
++    const int index = dpy == HWC_DISPLAY_VIRTUAL ? DPY_WRITEBACK : dpy;
++    OVASSERT(index >= 0 && index < DPY_MAX, "Invalid dpy %d", dpy);
++    return sDpyFbMap[index];
+ }
+ 
+ inline scale::Scale *Overlay::getScalar() {
+diff --git a/libhwcomposer/hwc_mdpcomp.cpp b/libhwcomposer/hwc_mdpcomp.cpp
+--- a/libhwcomposer/hwc_mdpcomp.cpp
++++ b/libhwcomposer/hwc_mdpcomp.cpp
+@@ -666,8 +666,13 @@
+ 
+ bool MDPComp::fullMDPComp(hwc_context_t *ctx, hwc_display_contents_1_t* list) {
+     //Will benefit presentation / secondary-only layer.
++    // Writeback can compose the same number of layers as its mixer supports.
++    // The old single-layer secondary limit forces normal screen mirroring
++    // (application, status bar, wallpaper) through the legacy GLES path.
++    const int maxSecondaryLayers = mDpy == HWC_DISPLAY_VIRTUAL
++            ? sMaxPipesPerMixer : MAX_SEC_LAYERS;
+     if((mDpy > HWC_DISPLAY_PRIMARY) &&
+-            (list->numHwLayers - 1) > MAX_SEC_LAYERS) {
++            (list->numHwLayers - 1) > maxSecondaryLayers) {
+         ALOGD_IF(isDebug(), "%s: Exceeds max secondary pipes",__FUNCTION__);
+         return false;
+     }
+@@ -990,8 +995,10 @@
+     }
+ 
+     //Will benefit cases where a video has non-updating background.
++    const int maxSecondaryLayers = mDpy == HWC_DISPLAY_VIRTUAL
++            ? sMaxPipesPerMixer : MAX_SEC_LAYERS;
+     if((mDpy > HWC_DISPLAY_PRIMARY) and
+-            (mdpCount > MAX_SEC_LAYERS)) {
++            (mdpCount > maxSecondaryLayers)) {
+         ALOGD_IF(isDebug(), "%s: Exceeds max secondary pipes",__FUNCTION__);
+         reset(ctx);
+         return false;

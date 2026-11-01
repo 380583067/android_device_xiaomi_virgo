@@ -1,0 +1,182 @@
+diff --git a/common/dpmd.te b/common/dpmd.te
+index b870fca..a8d2fa3 100644
+--- a/common/dpmd.te
++++ b/common/dpmd.te
+@@ -14,7 +14,7 @@
+ #allow dpmd dpmd_data_file:file create_file_perms;
+ #allow dpmd dpmd_data_file:dir create_dir_perms;
+ 
+-allow dpmd persist_dpm_prop:file r_file_perms;
++get_prop(dpmd, persist_dpm_prop)
+ 
+ allow dpmd sysfs_wake_lock:file rw_file_perms;
+ 
+diff --git a/private/app.te b/private/app.te
+index 11888bf..c330d34 100644
+--- a/private/app.te
++++ b/private/app.te
+@@ -25,6 +25,5 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-allow appdomain persist_dpm_prop:file r_file_perms;
+ 
+ unix_socket_send(appdomain, seempdw, seempd)
+diff --git a/private/bt_logger.te b/private/bt_logger.te
+index 406c02c..a75df05 100644
+--- a/private/bt_logger.te
++++ b/private/bt_logger.te
+@@ -26,7 +26,7 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type bt_logger, domain;
+-type bt_logger_exec, exec_type, file_type;
++type bt_logger_exec, exec_type, file_type, system_file_type;
+ typeattribute  bt_logger  bluetoothdomain;
+ typeattribute bt_logger coredomain;
+ 
+diff --git a/private/dataservice_app.te b/private/dataservice_app.te
+index 99588b4..44a9e42 100644
+--- a/private/dataservice_app.te
++++ b/private/dataservice_app.te
+@@ -50,8 +50,7 @@ allow dataservice_app dpmd_data_file:file create_file_perms;
+ #don't audit /proc/<pid>/stat denials
+ dontaudit dataservice_app domain:dir r_dir_perms;
+ 
+-#allow dpmservice to get running time for apps
+-r_dir_file(dataservice_app, appdomain)
++# DPM queries process metadata through procfs; it must not read app data.
+ 
+ allow dataservice_app self:socket create_socket_perms;
+ allowxperm dataservice_app self:socket ioctl msm_sock_ipc_ioctls_system;
+diff --git a/private/dpmd.te b/private/dpmd.te
+index 6b17e94..f63a55c 100644
+--- a/private/dpmd.te
++++ b/private/dpmd.te
+@@ -28,7 +28,7 @@
+ 
+ typeattribute dpmd coredomain;
+ typeattribute dpmd mlstrustedsubject;
+-type dpmd_exec, exec_type, file_type;
++type dpmd_exec, exec_type, file_type, system_file_type;
+ 
+ init_daemon_domain(dpmd)
+ 
+diff --git a/private/dun-server.te b/private/dun-server.te
+index 28b3859..561a761 100644
+--- a/private/dun-server.te
++++ b/private/dun-server.te
+@@ -25,7 +25,7 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-type dun-server_exec, exec_type, file_type;
++type dun-server_exec, exec_type, file_type, system_file_type;
+ typeattribute  dun-server  bluetoothdomain;
+ typeattribute dun-server coredomain;
+ 
+diff --git a/private/property_contexts b/private/property_contexts
+index 74019c9..3b99bb6 100644
+--- a/private/property_contexts
++++ b/private/property_contexts
+@@ -25,6 +25,6 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-persist.vendor.dpm.        u:object_r:persist_dpm_prop:s0
++persist.vendor.dpm.        u:object_r:vendor_persist_dpm_prop:s0
+ vendor.bluetooth.          u:object_r:bluetooth_prop:s0
+ vendor.qcom.bluetooth.     u:object_r:bluetooth_prop:s0
+diff --git a/private/qvrd.te b/private/qvrd.te
+index 4bf46f8..7b0039f 100644
+--- a/private/qvrd.te
++++ b/private/qvrd.te
+@@ -27,7 +27,7 @@
+ 
+ typeattribute qvrd coredomain;
+ typeattribute qvrd mlstrustedsubject;
+-type qvrd_exec, exec_type, file_type;
++type qvrd_exec, exec_type, file_type, system_file_type;
+ init_daemon_domain(qvrd)
+ 
+ #
+diff --git a/private/seempd.te b/private/seempd.te
+index c39cd7b..18a627f 100644
+--- a/private/seempd.te
++++ b/private/seempd.te
+@@ -25,8 +25,10 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-type seempd, domain, mlstrustedsubject, coredomain;
+-type seempd_exec, exec_type, file_type;
++type seempd, domain, mlstrustedsubject;
++typeattribute seempd data_between_core_and_vendor_violators;
++typeattribute seempd socket_between_core_and_vendor_violators;
++type seempd_exec, exec_type, file_type, vendor_file_type;
+ 
+ init_daemon_domain(seempd)
+ 
+diff --git a/private/smcinvoked.te b/private/smcinvoked.te
+index c08371c..6325649 100644
+--- a/private/smcinvoked.te
++++ b/private/smcinvoked.te
+@@ -26,7 +26,7 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type smcinvoke_daemon, domain, coredomain;
+-type smcinvoke_daemon_exec, exec_type, file_type;
++type smcinvoke_daemon_exec, exec_type, file_type, system_file_type;
+ 
+ init_daemon_domain(smcinvoke_daemon)
+ 
+diff --git a/private/wfdservice.te b/private/wfdservice.te
+index ad8cc21..73e3e47 100644
+--- a/private/wfdservice.te
++++ b/private/wfdservice.te
+@@ -25,7 +25,9 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-typeattribute wfdservice coredomain;
++
++typeattribute wfdservice data_between_core_and_vendor_violators;
++typeattribute wfdservice socket_between_core_and_vendor_violators;
+ 
+ #Allow for transition from init domain to wfdservice
+ init_daemon_domain(wfdservice)
+diff --git a/public/mmi_sys.te b/public/mmi_sys.te
+index 7770fa2..87b581c 100644
+--- a/public/mmi_sys.te
++++ b/public/mmi_sys.te
+@@ -25,7 +25,7 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-type mmi_sys, domain, coredomain;
++type mmi_sys, domain;
+ 
+-type mmi_sys_exec, exec_type, file_type;
++type mmi_sys_exec, exec_type, file_type, vendor_file_type;
+ 
+diff --git a/public/property.te b/public/property.te
+index 642a45b..530f75e 100644
+--- a/public/property.te
++++ b/public/property.te
+@@ -25,4 +25,5 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-type persist_dpm_prop, property_type;
++system_public_prop(persist_dpm_prop);
++vendor_public_prop(vendor_persist_dpm_prop);
+diff --git a/public/wfdservice.te b/public/wfdservice.te
+index f954f9c..9949f79 100644
+--- a/public/wfdservice.te
++++ b/public/wfdservice.te
+@@ -26,4 +26,4 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type wfdservice, domain;
+-type wfdservice_exec, exec_type, file_type;
++type wfdservice_exec, exec_type, file_type, vendor_file_type;

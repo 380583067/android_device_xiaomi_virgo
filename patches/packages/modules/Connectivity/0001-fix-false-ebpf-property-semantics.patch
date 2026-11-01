@@ -1,0 +1,27 @@
+diff --git a/netd/NetdUpdatable.cpp b/netd/NetdUpdatable.cpp
+index 681ea64..7d515c9 100644
+--- a/netd/NetdUpdatable.cpp
++++ b/netd/NetdUpdatable.cpp
+@@ -19,7 +19,7 @@
+ #include "BpfHandler.h"
+ 
+ #include <android-base/logging.h>
+-#include <cutils/properties.h>
++#include <android-base/properties.h>
+ #include <netdutils/Status.h>
+ 
+ #include "NetdUpdatablePublic.h"
+@@ -30,8 +30,11 @@ int libnetd_updatable_init(const char* cg2_path) {
+     android::base::InitLogging(/*argv=*/nullptr);
+     LOG(INFO) << __func__ << ": Initializing";
+ 
+-    char value[PROP_VALUE_MAX] = "";
+-    bool ebpf_supported = __system_property_get("ro.kernel.ebpf.supported", value) != 0 || strcmp(value, "false") == 0;
++    // The property is a boolean capability flag. Testing only whether it is
++    // present makes the explicit value "false" enable eBPF as well, which
++    // breaks bring-up on legacy kernels that do not provide eBPF support.
++    const bool ebpf_supported =
++            android::base::GetBoolProperty("ro.kernel.ebpf.supported", false);
+     if (ebpf_supported) {
+         android::netdutils::Status ret = sBpfHandler.init(cg2_path);
+         if (!android::netdutils::isOk(ret)) {

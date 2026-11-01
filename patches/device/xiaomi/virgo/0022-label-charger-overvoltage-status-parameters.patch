@@ -1,0 +1,9 @@
+diff --git a/sepolicy/genfs_contexts b/sepolicy/genfs_contexts
+--- a/sepolicy/genfs_contexts
++++ b/sepolicy/genfs_contexts
+@@ -15,3 +15,5 @@
+ genfscon sysfs /devices/f9968000.i2c/i2c-12/12-006b u:object_r:sysfs_sensors:s0
+ genfscon sysfs /devices/virtual/input/input1/enabled u:object_r:virgo_gpio_keys_sysfs:s0
+ genfscon sysfs /devices/gpio_keys.87/input/input2/enabled u:object_r:virgo_gpio_keys_sysfs:s0
++genfscon sysfs /module/qpnp_charger/parameters/ext_ovp_present u:object_r:sysfs_battery_supply:s0
++genfscon sysfs /module/qpnp_charger/parameters/ext_ovp_isns_present u:object_r:sysfs_battery_supply:s0

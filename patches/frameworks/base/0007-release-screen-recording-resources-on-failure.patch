@@ -1,0 +1,198 @@
+diff --git a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
+--- a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
++++ b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenMediaRecorder.java
+@@ -359,17 +359,25 @@
+ 
+         // MediaRecorder might throw RuntimeException if stopped immediately after starting
+         // We should remove the recording in this case as it will be invalid
+-        closer.register(mMediaRecorder::stop);
+-        closer.register(mMediaRecorder::release);
+-        closer.register(mInputSurface::release);
+-        closer.register(mVirtualDisplay::release);
+-        closer.register(mMediaProjection::stop);
++        if (mMediaRecorder != null) {
++            closer.register(mMediaRecorder::stop);
++            closer.register(mMediaRecorder::release);
++        }
++        if (mVirtualDisplay != null) closer.register(mVirtualDisplay::release);
++        if (mInputSurface != null) closer.register(mInputSurface::release);
+         closer.register(this::stopInternalAudioRecording);
+-
+-        closer.close();
+-
+-        mMediaRecorder = null;
+-        mMediaProjection = null;
++        if (mMediaProjection != null) {
++            closer.register(() -> mMediaProjection.unregisterCallback(this));
++            closer.register(mMediaProjection::stop);
++        }
++        try {
++            closer.close();
++        } finally {
++            mMediaRecorder = null;
++            mVirtualDisplay = null;
++            mInputSurface = null;
++            mMediaProjection = null;
++        }
+ 
+         Log.d(TAG, "end recording");
+     }
+@@ -381,9 +389,10 @@
+     }
+ 
+     private void stopInternalAudioRecording() {
+-        if (mAudioSource == INTERNAL || mAudioSource == MIC_AND_INTERNAL) {
+-            mAudio.end();
++        if (mAudio != null) {
++            ScreenInternalAudioRecorder audio = mAudio;
+             mAudio = null;
++            audio.end();
+         }
+     }
+ 
+@@ -459,6 +468,11 @@
+      * Release the resources without saving the data
+      */
+     protected void release() {
++        try {
++            end();
++        } catch (IOException | RuntimeException e) {
++            Log.w(TAG, "Error releasing recording resources", e);
++        }
+         if (mTempVideoFile != null) {
+             mTempVideoFile.delete();
+         }
+diff --git a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenInternalAudioRecorder.java b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenInternalAudioRecorder.java
+--- a/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenInternalAudioRecorder.java
++++ b/packages/SystemUI/src/com/android/systemui/screenrecord/ScreenInternalAudioRecorder.java
+@@ -50,6 +50,9 @@
+     private MediaMuxer mMuxer;
+     private boolean mMic;
+     private boolean mStarted;
++    private volatile boolean mRunning;
++    private boolean mCodecStarted;
++    private boolean mEnded;
+ 
+     private int mTrackId = -1;
+ 
+@@ -141,7 +144,7 @@
+             int offsetShortsInternal = 0;
+             int readShortsMic = 0;
+             int offsetShortsMic = 0;
+-            while (true) {
++            while (mRunning) {
+                 if (mMic) {
+                     readShortsInternal = mAudioRecord.read(bufferInternal, offsetShortsInternal,
+                             bufferInternal.length - offsetShortsInternal);
+@@ -192,7 +195,7 @@
+                 }
+ 
+                 //exit the loop when at end of stream
+-                if (readBytes < 0) {
++                if (!mRunning || readBytes < 0) {
+                     Log.e(TAG, "read error " + readBytes +
+                             ", shorts internal: " + readShortsInternal +
+                             ", shorts mic: " + readShortsMic);
+@@ -234,7 +237,6 @@
+     private void encode(byte[] buffer, int readBytes) {
+         int offset = 0;
+         while (readBytes > 0) {
+-            int totalBytesRead = 0;
+             int bufferIndex = mCodec.dequeueInputBuffer(TIMEOUT);
+             if (bufferIndex < 0) {
+                 writeOutput();
+@@ -244,12 +246,11 @@
+             buff.clear();
+             int bufferSize = buff.capacity();
+             int bytesToRead = readBytes > bufferSize ? bufferSize : readBytes;
+-            totalBytesRead += bytesToRead;
+             readBytes -= bytesToRead;
+             buff.put(buffer, offset, bytesToRead);
+             offset += bytesToRead;
+             mCodec.queueInputBuffer(bufferIndex, 0, bytesToRead, mPresentationTime, 0);
+-            mTotalBytes += totalBytesRead;
++            mTotalBytes += bytesToRead;
+             mPresentationTime = 1000000L * (mTotalBytes / 2) / mConfig.sampleRate;
+ 
+             writeOutput();
+@@ -258,6 +259,7 @@
+ 
+     private void endStream() {
+         int bufferIndex = mCodec.dequeueInputBuffer(TIMEOUT);
++        if (bufferIndex < 0) return;
+         mCodec.queueInputBuffer(bufferIndex, 0, 0, mPresentationTime,
+                 MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+         writeOutput();
+@@ -302,33 +304,54 @@
+         if (mMic) mAudioRecordMic.startRecording();
+         Log.d(TAG, "channel count " + mAudioRecord.getChannelCount());
+         mCodec.start();
++        mCodecStarted = true;
+         if (mAudioRecord.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING) {
+             throw new IllegalStateException("Audio recording failed to start");
+         }
++        mRunning = true;
+         mThread.start();
+     }
+ 
+     /**
+      * end recording
+      */
+-    public void end() {
+-        mAudioRecord.stop();
+-        if (mMic) {
+-            mAudioRecordMic.stop();
+-        }
+-        mAudioRecord.release();
+-        if (mMic) {
+-            mAudioRecordMic.release();
+-        }
++    public synchronized void end() {
++        if (mEnded) return;
++        mEnded = true;
++        // A stopped AudioRecord may return zero instead of an error on legacy
++        // HALs. Signal the loop explicitly so join cannot leave a busy worker.
++        mRunning = false;
++        if (mAudioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
++            closeSafely(mAudioRecord::stop);
++        }
++        if (mMic && mAudioRecordMic.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
++            closeSafely(mAudioRecordMic::stop);
++        }
++        boolean interrupted = false;
++        if (mThread != null) {
++            while (mThread.isAlive()) {
++                try {
++                    mThread.join();
++                } catch (InterruptedException e) {
++                    interrupted = true;
++                }
++            }
++        }
++        closeSafely(mAudioRecord::release);
++        if (mMic) closeSafely(mAudioRecordMic::release);
++        if (mCodecStarted) closeSafely(mCodec::stop);
++        closeSafely(mCodec::release);
++        if (mTrackId >= 0) closeSafely(mMuxer::stop);
++        closeSafely(mMuxer::release);
++        mThread = null;
++        if (interrupted) Thread.currentThread().interrupt();
++    }
++
++    private static void closeSafely(Runnable action) {
+         try {
+-            mThread.join();
+-        } catch (InterruptedException e) {
+-            e.printStackTrace();
+-        }
+-        mCodec.stop();
+-        mCodec.release();
+-        mMuxer.stop();
+-        mMuxer.release();
+-        mThread = null;
++            action.run();
++        } catch (RuntimeException e) {
++            Log.w(TAG, "Error releasing internal audio recorder", e);
++        }
+     }
+ }

@@ -1,0 +1,37 @@
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -3,6 +3,10 @@
+ SUBLEVEL = 113
+ EXTRAVERSION =
+ NAME = Saber-toothed Squirrel
++
++# Fixed Beijing build time for both ROM builds and standalone kernel builds.
++# Keep the numeric offset so initramfs date parsing is timezone-independent.
++export KBUILD_BUILD_TIMESTAMP := Sat Oct 24 10:24:00 +0800 2026
+ 
+ # *DOCUMENTATION*
+ # To see a list of typical targets execute "make help"
+diff --git a/scripts/mkcompile_h b/scripts/mkcompile_h
+--- a/scripts/mkcompile_h
++++ b/scripts/mkcompile_h
+@@ -82,16 +82,10 @@
+ # Only replace the real compile.h if the new one is different,
+ # in order to preserve the timestamp and avoid unnecessary
+ # recompilations.
+-# We don't consider the file changed if only the date/time changed.
+-# A kernel config change will increase the generation number, thus
+-# causing compile.h to be updated (including date/time) due to the 
+-# changed comment in the
+-# first line.
++# Compare the timestamp too, so an incremental build replaces a header from
++# before KBUILD_BUILD_TIMESTAMP was pinned. The fixed value avoids time churn.
+ 
+-if [ -r $TARGET ] && \
+-      grep -v 'UTS_VERSION' $TARGET > .tmpver.1 && \
+-      grep -v 'UTS_VERSION' .tmpcompile > .tmpver.2 && \
+-      cmp -s .tmpver.1 .tmpver.2; then
++if [ -r $TARGET ] && cmp -s $TARGET .tmpcompile; then
+    rm -f .tmpcompile
+ else
+    vecho "  UPD     $TARGET"

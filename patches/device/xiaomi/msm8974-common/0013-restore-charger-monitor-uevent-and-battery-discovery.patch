@@ -1,0 +1,11 @@
+diff --git a/sepolicy/charger_monitor.te b/sepolicy/charger_monitor.te
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/charger_monitor.te
+@@ -0,0 +1,6 @@
++# libcutils verifies SO_RCVBUF after creating the hotplug uevent socket.
++# Missing getopt makes charger_monitor exit and restart every five seconds.
++allow charger_monitor self:netlink_kobject_uevent_socket getopt;
++
++# The legacy monitor enumerates this directory to find the QPNP battery.
++allow charger_monitor sysfs_spmi_dev:dir r_dir_perms;

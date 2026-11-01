@@ -1,0 +1,68 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -49,6 +49,12 @@
+ # HIDL
+ DEVICE_MANIFEST_FILE += $(DEVICE_PATH)/manifest.xml
+ 
++# FCM 5 in this Android 14 port does not enumerate several legacy HIDL
++# services still shipped by virgo. Add them as a product-scoped framework
++# compatibility extension so VINTF checks the real HALs without editing AOSP
++# framework matrices or removing the services from the device manifest.
++DEVICE_PRODUCT_COMPATIBILITY_MATRIX_FILE += $(DEVICE_PATH)/compatibility_matrix_product.xml
++
+ # ReleaseTools
+ TARGET_RELEASETOOLS_EXTENSIONS := $(DEVICE_PATH)/releasetools
+ 
+diff --git a/compatibility_matrix_product.xml b/compatibility_matrix_product.xml
+new file mode 100644
+index 0000000..90adfa7
+--- /dev/null
++++ b/compatibility_matrix_product.xml
+@@ -0,0 +1,46 @@
++<compatibility-matrix version="1.0" type="framework" level="5">
++    <!-- These services are part of virgo's shipped MSM8974 vendor stack.
++         The Android 14 FCM 5 matrix omits their legacy HIDL interfaces, so
++         declare the product's actual framework-facing requirements here. -->
++    <hal format="hidl" optional="false">
++        <name>android.hardware.configstore</name>
++        <version>1.1</version>
++        <interface>
++            <name>ISurfaceFlingerConfigs</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="false">
++        <name>android.hardware.light</name>
++        <version>2.0</version>
++        <interface>
++            <name>ILight</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="false">
++        <name>android.hardware.radio.deprecated</name>
++        <version>1.2</version>
++        <interface>
++            <name>IOemHook</name>
++            <instance>slot1</instance>
++            <instance>slot2</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="false">
++        <name>android.hardware.vibrator</name>
++        <version>1.0</version>
++        <interface>
++            <name>IVibrator</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++    <hal format="hidl" optional="false">
++        <name>vendor.lineage.touch</name>
++        <version>1.0</version>
++        <interface>
++            <name>IKeyDisabler</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++</compatibility-matrix>

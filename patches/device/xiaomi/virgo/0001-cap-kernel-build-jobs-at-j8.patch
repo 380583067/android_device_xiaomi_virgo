@@ -1,0 +1,13 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -16,4 +16,8 @@
+ #
+ -include device/xiaomi/msm8974-common/BoardConfigCommon.mk
+ 
++# Lineage launches a separate kernel make with all online CPUs by default.
++# Cap the nested kernel build so it follows the requested j8 build limit.
++TARGET_KERNEL_ADDITIONAL_FLAGS += -j8
++
+ DEVICE_PATH := device/xiaomi/virgo
+*** End Patch

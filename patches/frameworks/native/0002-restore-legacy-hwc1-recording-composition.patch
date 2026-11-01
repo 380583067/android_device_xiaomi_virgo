@@ -1,0 +1,94 @@
+diff --git a/services/surfaceflinger/SurfaceFlinger.cpp b/services/surfaceflinger/SurfaceFlinger.cpp
+--- a/services/surfaceflinger/SurfaceFlinger.cpp
++++ b/services/surfaceflinger/SurfaceFlinger.cpp
+@@ -899,6 +899,10 @@
+     mCompositionEngine->setTimeStats(mTimeStats);
+     mCompositionEngine->setHwComposer(getFactory().createHWComposer(mHwcServiceName));
+     mCompositionEngine->getHwComposer().setCallback(*this);
++    // RGB-to-YUV copies require a HAL virtual display, including on HWC1 adapters.
++    if (useHwcForRgbToYuv) {
++        enableHalVirtualDisplays(true);
++    }
+     ClientCache::getInstance().setRenderEngine(&getRenderEngine());
+ 
+     enableLatchUnsignaledConfig = getLatchUnsignaledConfig();
+@@ -2735,7 +2739,9 @@
+         if (display->isVirtual()) {
+             const Fps refreshRate = display->getAdjustedRefreshRate();
+ 
+-            if (!refreshRate.isValid() ||
++            // HWC1 set submits every display together; refresh its writeback target
++            // each time so it cannot write into a buffer already queued to the encoder.
++            if (useHwcForRgbToYuv || !refreshRate.isValid() ||
+                 mScheduler->isVsyncInPhase(pacesetterTarget.frameBeginTime(), refreshRate)) {
+                 refreshArgs.outputs.push_back(display->getCompositionDisplay());
+             }
+diff --git a/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp b/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp
+--- a/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp
++++ b/services/surfaceflinger/CompositionEngine/src/CompositionEngine.cpp
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include <compositionengine/CompositionRefreshArgs.h>
++#include <android-base/properties.h>
+ #include <compositionengine/LayerFE.h>
+ #include <compositionengine/LayerFECompositionState.h>
+ #include <compositionengine/OutputLayer.h>
+@@ -38,6 +39,28 @@
+ 
+ CompositionEngine::~CompositionEngine() = default;
+ 
++void presentLegacyOutputs(const CompositionRefreshArgs& args) {
++    for (const auto& output : args.outputs) {
++        output->updateColorProfile(args);
++        output->updateCompositionState(args);
++        output->planComposition();
++        output->writeCompositionState(args);
++        output->setColorTransform(args);
++        output->beginFrame();
++    }
++    for (const auto& output : args.outputs) {
++        output->prepareFrame();
++    }
++    for (const auto& output : args.outputs) {
++        output->devOptRepaintFlash(args);
++        output->finishFrame({});
++    }
++    for (const auto& output : args.outputs) {
++        output->presentFrameAndReleaseLayers();
++        output->renderCachedSets(args);
++    }
++}
++
+ namespace impl {
+ 
+ std::unique_ptr<compositionengine::CompositionEngine> createCompositionEngine() {
+@@ -142,6 +165,17 @@
+         for (const auto& output : args.outputs) {
+             output->prepare(args, latchedLayers);
+         }
++    }
++
++    // HWC1 prepare/set operate on one batch of displays. Write every display's
++    // current state before validation, then render every client target before
++    // the first present can submit that batch. Per-output present interleaves
++    // these phases and exposes stale layers or unaccepted changes on HWC1.
++    static const bool useHwcCopy = android::base::GetBoolProperty(
++            "ro.surface_flinger.force_hwc_copy_for_virtual_displays", false);
++    if (useHwcCopy && args.outputs.size() > 1) {
++        presentLegacyOutputs(args);
++        return;
+     }
+ 
+     // Offloading the HWC call for `present` allows us to simultaneously call it
+diff --git a/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h b/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h
+--- a/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h
++++ b/services/surfaceflinger/CompositionEngine/include/compositionengine/Output.h
+@@ -65,6 +65,7 @@
+  * Encapsulates all the states involved with composing layers for an output
+  */
+ class Output {
++    friend void presentLegacyOutputs(const CompositionRefreshArgs&);
+ public:
+     using ReleasedLayers = std::vector<wp<LayerFE>>;
+     using UniqueFELayerStateMap = std::unordered_map<LayerFE*, LayerFECompositionState*>;

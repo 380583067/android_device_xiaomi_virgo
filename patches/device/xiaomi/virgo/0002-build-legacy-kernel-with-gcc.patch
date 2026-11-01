@@ -1,0 +1,13 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -43,3 +43,9 @@
+ 
+ -include vendor/xiaomi/virgo/BoardConfigVendor.mk
+ 
++# This device uses a legacy Linux 3.4 kernel that predates the Clang target
++# configuration expected by the Android 14 kernel build wrapper. Build this
++# kernel with the bundled ARM GCC 4.9 toolchain; Android userspace stays Clang.
++TARGET_KERNEL_CLANG_COMPILE := false
++# Use the real GCC driver directly; its legacy wrapper requires /usr/bin/python.
++KERNEL_CC = CC=$(BUILD_TOP)/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/bin/real-arm-linux-androideabi-gcc

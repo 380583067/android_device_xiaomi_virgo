@@ -1,0 +1,53 @@
+--- a/sepolicy/file_contexts
++++ b/sepolicy/file_contexts
+@@ -1,3 +1,15 @@
+ /(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay@2\.0-service\.virgo u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
+ /data/vendor/virgo-display(/.*)? u:object_r:virgo_display_vendor_data_file:s0
+ /(vendor|system/vendor)/lib(64)?/libsc-a3xx\.so u:object_r:same_process_hal_file:s0
++# Legacy passthrough HALs loaded directly by Android processes.
++/(vendor|system/vendor)/lib/hw/gralloc\.msm8974\.so u:object_r:same_process_hal_file:s0
++/(vendor|system/vendor)/lib/hw/android\.hardware\.sensors@1\.0-impl\.so u:object_r:same_process_hal_file:s0
++/(vendor|system/vendor)/lib/hw/sensors\.msm8974\.so u:object_r:same_process_hal_file:s0
++/(vendor|system/vendor)/lib/libsensors\.leo\.so u:object_r:same_process_hal_file:s0
++/(vendor|system/vendor)/lib/hw/android\.hardware\.camera\.provider@2\.4-impl\.so u:object_r:same_process_hal_file:s0
++# Use the existing HAL domains instead of inheriting init's domain.
++/(vendor|system/vendor)/bin/hw/android\.hardware\.gatekeeper@1\.0-service\.software u:object_r:hal_gatekeeper_default_exec:s0
++/(vendor|system/vendor)/bin/hw/android\.hardware\.light@2\.0-service\.xiaomi_msm8974 u:object_r:hal_light_default_exec:s0
++/(vendor|system/vendor)/bin/hw/vendor\.lineage\.touch@1\.0-service\.virgo u:object_r:hal_lineage_touch_default_exec:s0
++# Legacy passthrough sensors: proximity, ALS, pressure, IMU, and activity.
++/dev/iio:device[0-4] u:object_r:virgo_sensor_device:s0
+--- a/sepolicy/genfs_contexts
++++ b/sepolicy/genfs_contexts
+@@ -5,3 +5,13 @@
+ genfscon sysfs /devices/system/cpu/cpu2/online u:object_r:sysfs_mpdecision:s0
+ genfscon sysfs /devices/system/cpu/cpu3/online u:object_r:sysfs_mpdecision:s0
+ genfscon sysfs /devices/qpnp-bms-10/power_supply/bms/type u:object_r:sysfs_batteryinfo:s0
++# Physical targets behind /sys/class/leds and the touch-key control symlink.
++genfscon sysfs /devices/leds-qpnp-24/leds u:object_r:sysfs_leds:s0
++genfscon sysfs /devices/leds-qpnp-27/leds u:object_r:sysfs_leds:s0
++genfscon sysfs /devices/mdp.0/qcom,mdss_fb_primary.179/leds u:object_r:sysfs_graphics:s0
++genfscon sysfs /devices/f9924000.i2c/i2c-2/2-0028/keys_off u:object_r:virgo_touch_key_sysfs:s0
++genfscon sysfs /devices/f9925000.i2c/i2c-4/4-0060 u:object_r:sysfs_sensors:s0
++genfscon sysfs /devices/f9925000.i2c/i2c-4/4-0077 u:object_r:sysfs_sensors:s0
++genfscon sysfs /devices/f9968000.i2c/i2c-12/12-006b u:object_r:sysfs_sensors:s0
++genfscon sysfs /devices/virtual/input/input1/enabled u:object_r:virgo_gpio_keys_sysfs:s0
++genfscon sysfs /devices/gpio_keys.87/input/input2/enabled u:object_r:virgo_gpio_keys_sysfs:s0
+--- /dev/null
++++ b/sepolicy/touch.te
+@@ -0,0 +1,3 @@
++# Give the Lineage touch HAL access to the capacitive-key enable switch.
++type virgo_touch_key_sysfs, fs_type, sysfs_type;
++allow hal_lineage_touch_default virgo_touch_key_sysfs:file rw_file_perms;
+--- /dev/null
++++ b/sepolicy/power.te
+@@ -0,0 +1,3 @@
++# power_set_interactive_ext() toggles these GPIO-key nodes on sleep/wake.
++type virgo_gpio_keys_sysfs, fs_type, sysfs_type;
++allow hal_power_default virgo_gpio_keys_sysfs:file rw_file_perms;
+--- /dev/null
++++ b/sepolicy/sensors.te
+@@ -0,0 +1,4 @@
++# Virgo's legacy sensors passthrough HAL runs inside system_server.
++# Label only this board's five IIO sensor devices for read-only acquisition.
++type virgo_sensor_device, dev_type;
++allow system_server virgo_sensor_device:chr_file r_file_perms;

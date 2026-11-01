@@ -1,0 +1,27 @@
+From: Virgo kernel migration
+Subject: [PATCH] compiler: use GCC 5+ attributes for GCC 7.5
+
+diff --git a/include/linux/compiler-gcc.h b/include/linux/compiler-gcc.h
+--- a/include/linux/compiler-gcc.h
++++ b/include/linux/compiler-gcc.h
+@@ -106,7 +106,8 @@
+ #if (__GNUC__ <= 4)
+ #include gcc_header(__GNUC__)
+ #else
+-#include gcc_header(4)
++/* GCC 5+ shares these attributes; gcc4.h tests only __GNUC_MINOR__. */
++#include gcc_header(5)
+ #endif
+ 
+ #if !defined(__noclone)
+diff --git a/include/linux/compiler-gcc5.h b/include/linux/compiler-gcc5.h
+--- a/include/linux/compiler-gcc5.h
++++ b/include/linux/compiler-gcc5.h
+@@ -5,6 +5,7 @@
+ #define __used				__attribute__((__used__))
+ #define __must_check			__attribute__((warn_unused_result))
+ #define __compiler_offsetof(a, b)	__builtin_offsetof(a, b)
++#define __compiletime_object_size(obj) __builtin_object_size(obj, 0)
+ 
+ /* Mark functions as cold. gcc will assume any path leading to a call
+    to them will be unlikely.  This means a lot of manual unlikely()s

@@ -1,0 +1,1707 @@
+diff --git a/common/adbd.te b/common/adbd.te
+--- a/common/adbd.te
++++ b/common/adbd.te
+@@ -1,8 +1,10 @@
+ allow adbd tombstone_data_file:dir getattr;
+ 
++userdebug_or_eng(`
+ # allow read access for adb
+ r_dir_file(adbd, RIDL_data_file)
+ 
+ # allow read access for adb
+ r_dir_file(adbd, qti_logkit_priv_data_file)
+ r_dir_file(adbd, qti_logkit_pub_data_file)
++')
+diff --git a/common/app.te b/common/app.te
+--- a/common/app.te
++++ b/common/app.te
+@@ -19,13 +19,13 @@
+ #unix_socket_connect(appdomain, qti_logkit_pub, qti_logkit)
+ #allow appdomain qti_logkit_pub_socket:sock_file r_file_perms;
+ #allow appdomain qti_logkit_priv_data_file:dir r_dir_perms;
+-allow appdomain hwui_prop:file r_file_perms;
+-allow appdomain bservice_prop:file r_file_perms;
+-allow appdomain reschedule_service_prop:file r_file_perms;
+-allow appdomain debug_gralloc_prop:file r_file_perms;
++get_prop(appdomain, hwui_prop)
++get_prop(appdomain, bservice_prop)
++get_prop(appdomain, reschedule_service_prop)
++get_prop(appdomain, debug_gralloc_prop)
+ 
+ # Allow apps to read graphics vulkan property
+-allow appdomain graphics_vulkan_prop:file r_file_perms;
++get_prop(appdomain, graphics_vulkan_prop)
+ 
+ # Allow reading camera props
+ get_prop(appdomain, camera_prop)
+diff --git a/common/atfwd.te b/common/atfwd.te
+--- a/common/atfwd.te
++++ b/common/atfwd.te
+@@ -12,7 +12,7 @@
+ r_dir_file(atfwd, sysfs_esoc);
+ r_dir_file(atfwd, sysfs_data);
+ 
+-set_prop(atfwd, radio_prop)
++set_prop(atfwd, qcom_radio_prop)
+ 
+ hwbinder_use(atfwd)
+ get_prop(atfwd, hwservicemanager_prop)
+diff --git a/common/bluetooth.te b/common/bluetooth.te
+--- a/common/bluetooth.te
++++ b/common/bluetooth.te
+@@ -1,17 +1,17 @@
+ #Adding all bt related service to bt domains
+-type sapd, bluetoothdomain;
++type sapd, domain, bluetoothdomain;
+ type sapd_exec, exec_type, vendor_file_type, file_type;
+ 
+-type btsnoop, bluetoothdomain;
++type btsnoop, domain, bluetoothdomain;
+ type btsnoop_exec, exec_type, vendor_file_type, file_type;
+ 
+-type btnvtool, bluetoothdomain;
++type btnvtool, domain, bluetoothdomain;
+ type btnvtool_exec, exec_type, vendor_file_type, file_type;
+ 
+-type fmhal_service, bluetoothdomain;
++type fmhal_service, domain, bluetoothdomain;
+ type fmhal_service_exec, exec_type, vendor_file_type, file_type;
+ 
+-set_prop(bluetooth, bluetooth_prop)
++set_prop(bluetooth, qcom_bluetooth_prop)
+ allow bluetooth sysfs_bluetooth_writable:file w_file_perms;
+ 
+ #Access to /data/media
+diff --git a/common/bootanim.te b/common/bootanim.te
+--- a/common/bootanim.te
++++ b/common/bootanim.te
+@@ -28,7 +28,7 @@
+ # allow bootanim to binder mediaserver
+ binder_call(bootanim, mediaserver);
+ allow bootanim mediaserver_service:service_manager find;
+-allow bootanim boot_animation_prop:file r_file_perms;
+-allow bootanim debug_gralloc_prop:file r_file_perms;
++get_prop(bootanim, boot_animation_prop)
++get_prop(bootanim, debug_gralloc_prop)
+ set_prop(bootanim, qemu_gles_prop)
+ userdebug_or_eng(`allow bootanim self:process execmem;')
+diff --git a/common/cameraserver.te b/common/cameraserver.te
+--- a/common/cameraserver.te
++++ b/common/cameraserver.te
+@@ -44,7 +44,6 @@
+ allow cameraserver system_server:unix_stream_socket { read write };
+ 
+ #Allow read access to soc/msm-cam/video4linux/video0/name sysfs
+-allow cameraserver sysfs:file r_file_perms;
+ 
+ allow cameraserver persist_file:dir r_dir_perms;
+ set_prop(cameraserver, camera_prop)
+@@ -57,7 +56,7 @@
+ 
+ #Allows camera to call ADSP QDSP6 functionality
+ allow cameraserver qdsp_device:chr_file r_file_perms;
+-allow cameraserver camera_prop:file r_file_perms;
++get_prop(cameraserver, camera_prop)
+ 
+ #allow cameraserver to access /dsp
+ r_dir_file(cameraserver, adsprpcd_file);
+diff --git a/common/cnd.te b/common/cnd.te
+--- a/common/cnd.te
++++ b/common/cnd.te
+@@ -1,5 +1,7 @@
+ #permissive cnd;
+ type cnd, domain, mlstrustedsubject;
++typeattribute cnd data_between_core_and_vendor_violators;
++typeattribute cnd socket_between_core_and_vendor_violators;
+ type cnd_exec, exec_type, vendor_file_type, file_type;
+ file_type_auto_trans(cnd, socket_device, cnd_socket);
+ 
+@@ -34,7 +36,6 @@
+ allow cnd self:netlink_tcpdiag_socket nlmsg_read;
+ 
+ # allow cnd to set system property
+-set_prop(cnd, system_prop)
+ 
+ # allow cnd to access cnd_data_file
+ allow cnd cnd_data_file:file create_file_perms;
+@@ -98,6 +99,6 @@
+ add_hwservice(cnd, hal_latency_hwservice)
+ hwbinder_use(cnd)
+ get_prop(cnd, hwservicemanager_prop)
+-get_prop(cnd, wifi_prop)
++get_prop(cnd, wifi_hal_prop)
+ binder_call(cnd, dataservice_app)
+ binder_call(cnd, ims)
+diff --git a/common/domain.te b/common/domain.te
+--- a/common/domain.te
++++ b/common/domain.te
+@@ -1,16 +1,16 @@
+-r_dir_file(domain, sysfs_socinfo);
+-r_dir_file(domain, sysfs_esoc);
+-r_dir_file(domain, sysfs_ssr);
++r_dir_file({ domain -coredomain }, sysfs_socinfo);
++r_dir_file({ domain -coredomain }, sysfs_esoc);
++r_dir_file({ domain -coredomain }, sysfs_ssr);
+ 
+ dontaudit domain kernel:system module_request;
+ 
+ # Allow all domains read access to sysfs_thermal
+-r_dir_file(domain, sysfs_thermal);
++r_dir_file({ domain -coredomain }, sysfs_thermal);
+ 
+ # Allow domain to read /vendor -> /system/vendor
+ allow domain system_file:lnk_file getattr;
+ 
+-allow domain debug_gralloc_prop:file r_file_perms;
++get_prop(domain, debug_gralloc_prop)
+ 
+ not_full_treble(`allow domain vendor_file:dir r_dir_perms;')
+ 
+@@ -21,7 +21,7 @@
+ ')
+ dontaudit domain persist_dpm_prop:file r_file_perms;
+ 
+-allow domain sysfs_kgsl_gpuclk:file r_file_perms;
+-allow domain  sysfs_kgsl_gpuclk:lnk_file r_file_perms;
++allow { domain -isolated_app_all } sysfs_kgsl_gpuclk:file r_file_perms;
++allow { domain -isolated_app_all } sysfs_kgsl_gpuclk:lnk_file r_file_perms;
+ allow domain qti_debugfs:dir search;
+ allow domain kgsl_debugfs:dir search;
+diff --git a/common/drmserver.te b/common/drmserver.te
+--- a/common/drmserver.te
++++ b/common/drmserver.te
+@@ -2,4 +2,3 @@
+ r_dir_file(drmserver, firmware_file)
+ 
+ #Address denial logs for drm server accessing qseecom driver
+-allow drmserver tee_device:chr_file rw_file_perms;
+diff --git a/common/file.te b/common/file.te
+--- a/common/file.te
++++ b/common/file.te
+@@ -143,9 +143,9 @@
+ #File types required by mdm-helper
+ type sysfs_esoc, sysfs_type, fs_type;
+ type sysfs_ssr,  sysfs_type, fs_type;
+-type sysfs_ssr_toggle,  sysfs_type, file_type;
++type sysfs_ssr_toggle,  sysfs_type, fs_type;
+ type sysfs_hsic, sysfs_type, fs_type;
+-type sysfs_hsic_host_rdy, sysfs_type, file_type;
++type sysfs_hsic_host_rdy, sysfs_type, fs_type;
+ 
+ # Files accessed by qcom-system-daemon
+ type sysfs_socinfo, fs_type, sysfs_type;
+@@ -186,7 +186,7 @@
+ # hbtp config file
+ type hbtp_cfg_file, file_type;
+ type hbtp_log_file, file_type, data_file_type;
+-type hbtp_kernel_sysfs, file_type, sysfs_type;
++type hbtp_kernel_sysfs, fs_type, sysfs_type;
+ 
+ #Define the files written during the operation of usf
+ type usf_data_file, file_type, data_file_type;
+diff --git a/common/fstman.te b/common/fstman.te
+--- a/common/fstman.te
++++ b/common/fstman.te
+@@ -26,6 +26,7 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type fstman, domain;
++typeattribute fstman data_between_core_and_vendor_violators;
+ type fstman_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(fstman)
+diff --git a/common/gamed.te b/common/gamed.te
+--- a/common/gamed.te
++++ b/common/gamed.te
+@@ -28,6 +28,7 @@
+ # GAMED
+ 
+ type gamed, domain;
++typeattribute gamed socket_between_core_and_vendor_violators;
+ type gamed_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(gamed)
+diff --git a/common/hal_audio.te b/common/hal_audio.te
+--- a/common/hal_audio.te
++++ b/common/hal_audio.te
+@@ -53,7 +53,7 @@
+ binder_call(hal_audio,bluetooth)
+ 
+ #to read bt props
+-get_prop(hal_audio, bluetooth_prop)
++get_prop(hal_audio, qcom_bluetooth_prop)
+ 
+ #for perf hal call
+ hal_client_domain(hal_audio_default, hal_perf)
+diff --git a/common/hal_bluetooth_qti.te b/common/hal_bluetooth_qti.te
+--- a/common/hal_bluetooth_qti.te
++++ b/common/hal_bluetooth_qti.te
+@@ -26,6 +26,7 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type hal_bluetooth_qti, domain;
++typeattribute hal_bluetooth_qti data_between_core_and_vendor_violators;
+ hal_server_domain(hal_bluetooth_qti, hal_bluetooth)
+ 
+ type hal_bluetooth_qti_exec, exec_type, vendor_file_type, file_type;
+@@ -70,7 +71,6 @@
+ allow hal_bluetooth_qti qti_debugfs:dir r_dir_perms;
+ ')
+ 
+-allow system_app hal_bluetooth_hwservice :hwservice_manager find;
+ 
+ #FM IPC with BT/FM hal daemon
+ binder_call(system_app, hal_bluetooth);
+diff --git a/common/hal_graphics_composer.te b/common/hal_graphics_composer.te
+--- a/common/hal_graphics_composer.te
++++ b/common/hal_graphics_composer.te
+@@ -33,7 +33,7 @@
+ userdebug_or_eng(`
+     diag_use(hal_graphics_composer)
+ ')
+-allow hal_graphics_composer sdm_idle_time_prop:file r_file_perms;
++get_prop(hal_graphics_composer, sdm_idle_time_prop)
+ allow hal_graphics_composer_default self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
+ allow hal_graphics_composer sysfs_graphics:dir r_dir_perms;
+ allow hal_graphics_composer sysfs_graphics:file rw_file_perms;
+diff --git a/common/hal_iop_default.te b/common/hal_iop_default.te
+--- a/common/hal_iop_default.te
++++ b/common/hal_iop_default.te
+@@ -46,22 +46,12 @@
+ allow hal_iop_default iop_data_file:file create_file_perms;
+ 
+ #Allow access for /data/data
+-allow hal_iop_default app_data_file:dir r_dir_perms;
+-allow hal_iop_default app_data_file:file r_file_perms ;
++
+ 
+ #Allow access for /data/app
+-allow hal_iop_default apk_data_file:dir r_dir_perms;
+-allow hal_iop_default apk_data_file:file r_file_perms ;
++
+ 
+ #Allow access for /data/app/oat
+-allow hal_iop_default dalvikcache_data_file:dir r_dir_perms;
+-allow hal_iop_default dalvikcache_data_file:file r_file_perms ;
++
+ 
+ #Allow access for /data/app/oat
+-allow hal_iop_default system_data_file:dir r_dir_perms;
+-allow hal_iop_default system_data_file:file r_file_perms ;
+-
+-allow hal_iop_default self:capability {
+-      dac_override  # for database operations
+-      dac_read_search # For database operations
+-};
+diff --git a/common/hal_perf_default.te b/common/hal_perf_default.te
+--- a/common/hal_perf_default.te
++++ b/common/hal_perf_default.te
+@@ -58,7 +58,7 @@
+ r_dir_file(hal_perf, appdomain);
+ dontaudit hal_perf domain:dir r_dir_perms;
+ allow hal_perf appdomain:process sigkill;
+-allow hal_perf_default self:capability {dac_override sys_resource kill};
++allow hal_perf_default self:capability { sys_resource kill};
+ 
+ #Acess to kgsl memory /sys/class/kgsl/kgsl/proc/<pid>/kernel &
+ #Acess to ion  memory /sys/class/kgsl/kgsl/proc/<pid>/ion
+diff --git a/common/hostapd.te b/common/hostapd.te
+--- a/common/hostapd.te
++++ b/common/hostapd.te
+@@ -31,6 +31,8 @@
+ 
+ # userspace wifi access points
+ type hostapd, domain;
++typeattribute hostapd socket_between_core_and_vendor_violators;
++typeattribute hostapd data_between_core_and_vendor_violators;
+ type hostapd_exec, exec_type, vendor_file_type, file_type;
+ 
+ userdebug_or_eng(`
+diff --git a/common/ims.te b/common/ims.te
+--- a/common/ims.te
++++ b/common/ims.te
+@@ -1,5 +1,7 @@
+ #integrated sensor process
+ type ims, domain;
++typeattribute ims socket_between_core_and_vendor_violators;
++typeattribute ims data_between_core_and_vendor_violators;
+ type ims_exec, exec_type, vendor_file_type, file_type;
+ 
+ # Started by init
+@@ -21,7 +23,6 @@
+ # To run NDC command
+ allow ims {
+     vendor_shell_exec
+-    system_file
+     # IMS route installation
+     wcnss_service_exec
+     # for WPA supplicant comment to remove compilation issue
+diff --git a/common/init.te b/common/init.te
+--- a/common/init.te
++++ b/common/init.te
+@@ -58,7 +58,6 @@
+ allow init rawdump_block_device:blk_file setattr;
+ 
+ #cpu.rt_period_us and _runtime_us need this
+-allow init cgroup:file create;
+ 
+ # Allow init to bind mount loader config for media swcodec
+ allow init system_file:file mounton;
+diff --git a/common/init_shell.te b/common/init_shell.te
+--- a/common/init_shell.te
++++ b/common/init_shell.te
+@@ -2,6 +2,7 @@
+ # Normally these are shell commands or scripts invoked via sh
+ # from an init*.rc file.  No service should ever run in this domain.
+ type qti_init_shell, domain;
++typeattribute qti_init_shell data_between_core_and_vendor_violators;
+ type qti_init_shell_exec, exec_type, vendor_file_type,file_type;
+ 
+ init_daemon_domain(qti_init_shell)
+@@ -24,7 +25,7 @@
+ allow qti_init_shell smd_device:chr_file rw_file_perms;
+ 
+ # Run helpers from / or /system without changing domain.
+-allow qti_init_shell { system_file rootfs vendor_shell_exec }:file execute_no_trans;
++allow qti_init_shell { rootfs vendor_shell_exec }:file execute_no_trans;
+ 
+ # For accessing fmradio device node
+ allow qti_init_shell fm_radio_device:chr_file r_file_perms;
+@@ -50,8 +51,8 @@
+     chown
+     fowner
+     fsetid
+-    dac_override
+-    dac_read_search
++
++
+     sys_admin
+ };
+ 
+@@ -60,35 +61,30 @@
+ # perfd_prop - for setting ctl.perfd property from postboot script
+ # mpdecision_prop - for setting ctl.mpdecision property from postboot script
+ # vendor_mpctl_prop - for setting vendor.post_boot.parsed property from postboot script
+-# bluetooth_prop - for setting bt related properties from postboot script
++# qcom_bluetooth_prop - for setting bt related properties from postboot script
+ # uicc_prop - for access to UICC property
+ # ctl_qmuxd_prop/ctl_netmgrd_prop - Needed in order to set properties on qmuxd and netmgrd processes
+ # rmnet_mux_prop - Needed to set persist.rmnet.mux property
+ # sys_usb_controller_prop - Needed to set sys.usb.controller property
+ # sys_usb_configfs_prop - Needed to set sys.usb.configfs property
+-set_prop(qti_init_shell, system_prop)
+ set_prop(qti_init_shell, freq_prop)
+ set_prop(qti_init_shell, perfd_prop)
+ set_prop(qti_init_shell, gamed_prop)
+ set_prop(qti_init_shell, mpdecision_prop)
+ set_prop(qti_init_shell, vendor_mpctl_prop)
+-set_prop(qti_init_shell, bluetooth_prop)
+-set_prop(qti_init_shell, config_prop)
++set_prop(qti_init_shell, qcom_bluetooth_prop)
+ set_prop(qti_init_shell, sensors_prop)
+ set_prop(qti_init_shell, msm_irqbalance_prop)
+ set_prop(qti_init_shell, msm_irqbl_sdm630_prop)
+ set_prop(qti_init_shell, ipacm_prop)
+ set_prop(qti_init_shell, ipacm-diag_prop)
+ set_prop(qti_init_shell, qti_prop)
+-set_prop(qti_init_shell, ctl_rildaemon_prop)
+ set_prop(qti_init_shell, uicc_prop)
+ set_prop(qti_init_shell, ctl_qmuxd_prop)
+ set_prop(qti_init_shell, ctl_netmgrd_prop)
+ set_prop(qti_init_shell, ctl_port-bridge_prop)
+ set_prop(qti_init_shell, sdm_idle_time_prop)
+-set_prop(qti_init_shell, dalvik_prop)
+ set_prop(qti_init_shell, scr_enabled_prop)
+-set_prop(qti_init_shell, opengles_prop)
+ set_prop(qti_init_shell, mdm_helper_prop)
+ set_prop(qti_init_shell, fm_prop)
+ set_prop(qti_init_shell, usf_prop)
+@@ -105,8 +101,6 @@
+ set_prop(qti_init_shell, ctl_hbtp_prop)
+ #Needed for starting vm_bms executable post-boot
+ set_prop(qti_init_shell, vm_bms_prop)
+-set_prop(qti_init_shell, sys_usb_controller_prop)
+-set_prop(qti_init_shell, sys_usb_configfs_prop)
+ #Needed for setting hwui properties in post_boot
+ set_prop(qti_init_shell, hwui_prop)
+ set_prop(qti_init_shell, graphics_vulkan_prop)
+@@ -221,7 +215,7 @@
+ r_dir_file(qti_init_shell, rootfs)
+ allow qti_init_shell sysfs:file r_file_perms;
+ 
+-allow qti_init_shell rmnet_mux_prop:file r_file_perms;
++get_prop(qti_init_shell, rmnet_mux_prop)
+ 
+ r_dir_file(qti_init_shell, sysfs_devfreq)
+ allow qti_init_shell sysfs_devfreq:file w_file_perms;
+@@ -232,8 +226,7 @@
+ allow qti_init_shell vendor_radio_data_file:file create_file_perms;
+ 
+ set_prop(qti_init_shell, vendor_rild_libpath_prop);
+-set_prop(qti_init_shell, usb_prop)
+-set_prop(qti_init_shell, radio_prop)
++set_prop(qti_init_shell, qcom_radio_prop)
+ 
+ allow qti_init_shell fm_qsoc_patches_exec:file rx_file_perms;
+ 
+@@ -259,7 +252,7 @@
+ allow qti_init_shell proc_meminfo:file r_file_perms;
+ 
+ allow qti_init_shell sysfs_msm_power:file rw_file_perms;
+-allow qti_init_shell  sysfs_devices_system_cpu:dir w_file_perms;
++allow qti_init_shell  sysfs_devices_system_cpu:dir r_dir_perms;
+ allow qti_init_shell  sysfs_devices_system_cpu:file rw_file_perms;
+ 
+ allow qti_init_shell sysfs_usb_mtp_device:dir r_dir_perms;
+@@ -267,4 +260,6 @@
+ 
+ # For IO Cgroups
+ allow qti_init_shell cgroup:dir { mounton create_dir_perms };
+-allow qti_init_shell cgroup:file { create_file_perms };
++allow qti_init_shell cgroup:file rw_file_perms;
++
++set_prop(qti_init_shell, qcom_panel_prop)
+diff --git a/common/ipacm.te b/common/ipacm.te
+--- a/common/ipacm.te
++++ b/common/ipacm.te
+@@ -37,7 +37,6 @@
+ allow ipacm ipacm:netlink_netfilter_socket create_socket_perms_no_ioctl;
+ 
+ # To register ipacm to hwbinder
+-add_hwservice(ipacm, hal_tetheroffload_hwservice)
+ hwbinder_use(ipacm)
+ get_prop(ipacm, hwservicemanager_prop)
+ binder_call(ipacm, system_server)
+diff --git a/common/keystore.te b/common/keystore.te
+--- a/common/keystore.te
++++ b/common/keystore.te
+@@ -1,2 +1 @@
+ # Allow keystore to operate using qseecom_device
+-allow keystore tee_device:chr_file rw_file_perms;
+diff --git a/common/legacy_compat.te b/common/legacy_compat.te
+new file mode 100644
+--- /dev/null
++++ b/common/legacy_compat.te
+@@ -0,0 +1,31 @@
++# Exceptions for legacy framework clients with explicit vendor access.
++typeattribute tee socket_between_core_and_vendor_violators;
++typeattribute hal_audio_default data_between_core_and_vendor_violators;
++typeattribute vendor_init data_between_core_and_vendor_violators;
++typeattribute tee data_between_core_and_vendor_violators;
++typeattribute system_server data_between_core_and_vendor_violators;
++typeattribute mediaserver data_between_core_and_vendor_violators;
++typeattribute bluetooth system_writes_vendor_properties_violators;
++typeattribute system_server system_writes_vendor_properties_violators;
++typeattribute system_app system_writes_vendor_properties_violators;
++typeattribute radio system_writes_vendor_properties_violators;
++typeattribute vendor_fm_app system_writes_vendor_properties_violators;
++typeattribute mediacodec data_between_core_and_vendor_violators;
++typeattribute hal_bluetooth_default data_between_core_and_vendor_violators;
++typeattribute hal_camera_default data_between_core_and_vendor_violators;
++typeattribute rild data_between_core_and_vendor_violators;
++typeattribute netutils_wrapper data_between_core_and_vendor_violators;
++typeattribute surfaceflinger data_between_core_and_vendor_violators;
++typeattribute ueventd data_between_core_and_vendor_violators;
++typeattribute wificond data_between_core_and_vendor_violators;
++typeattribute audioserver data_between_core_and_vendor_violators;
++typeattribute cameraserver data_between_core_and_vendor_violators;
++typeattribute bluetooth socket_between_core_and_vendor_violators;
++typeattribute dumpstate socket_between_core_and_vendor_violators;
++typeattribute mediaserver socket_between_core_and_vendor_violators;
++typeattribute radio socket_between_core_and_vendor_violators;
++typeattribute system_server socket_between_core_and_vendor_violators;
++typeattribute netd socket_between_core_and_vendor_violators;
++typeattribute system_app socket_between_core_and_vendor_violators;
++typeattribute rild socket_between_core_and_vendor_violators;
++typeattribute nfc system_writes_vendor_properties_violators;
+diff --git a/common/location.te b/common/location.te
+--- a/common/location.te
++++ b/common/location.te
+@@ -1,5 +1,7 @@
+ # location - Location daemon
+ type location, domain;
++typeattribute location data_between_core_and_vendor_violators;
++typeattribute location socket_between_core_and_vendor_violators;
+ type location_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(location)
+@@ -84,7 +86,7 @@
+ # ioctlcmd=c304
+ allowxperm location self:socket ioctl msm_sock_ipc_ioctls;
+ allow location self:udp_socket ioctl;
+-allow location wifi_prop:file r_file_perms;
++get_prop(location, wifi_hal_prop)
+ # Replace this with macro
+ allowxperm location self:udp_socket ioctl priv_sock_ioctls;
+ 
+diff --git a/common/mdm_helper.te b/common/mdm_helper.te
+--- a/common/mdm_helper.te
++++ b/common/mdm_helper.te
+@@ -1,6 +1,7 @@
+ #Policy for mdm_helper
+ #mdm_helper - mdm_helper domain
+ type mdm_helper, domain;
++typeattribute mdm_helper data_between_core_and_vendor_violators;
+ type mdm_helper_exec, exec_type, vendor_file_type, file_type;
+ init_daemon_domain(mdm_helper);
+ 
+@@ -33,7 +34,7 @@
+ #Needed in order to run kickstart
+ allow mdm_helper shell:fd use;
+ allow mdm_helper vendor_shell_exec:file rx_file_perms;
+-allow mdm_helper { system_file mdm_helper_exec }:file x_file_perms;
++allow mdm_helper mdm_helper_exec:file x_file_perms;
+ 
+ #Needed by ks in order to access the efs sync partitions.
+ allow mdm_helper block_device:dir rw_dir_perms;
+diff --git a/common/mdtp.te b/common/mdtp.te
+--- a/common/mdtp.te
++++ b/common/mdtp.te
+@@ -77,8 +77,6 @@
+ # allow mdtpdaemon qce_device:chr_file rw_file_perms;
+ 
+ # Provide read access to all /system files for MDTP file-to-block-mapping
+-r_dir_file(mdtpdaemon, exec_type)
+-r_dir_file(mdtpdaemon, system_file)
+ 
+ # Provide mdtpd ability to access QMUXD/IPCRouter for QMI
+ qmux_socket(mdtpdaemon);
+diff --git a/common/mediacodec.te b/common/mediacodec.te
+--- a/common/mediacodec.te
++++ b/common/mediacodec.te
+@@ -73,7 +73,7 @@
+ #allow mediacodec audioserver_service:service_manager find;
+ set_prop(mediacodec, dolby_prop)
+ # DOLBY_END
+-allow mediacodec debug_gralloc_prop:file r_file_perms;
++get_prop(mediacodec, debug_gralloc_prop)
+ vndbinder_use(mediacodec);
+ hwbinder_use(mediacodec);
+ hal_client_domain(mediacodec, hal_vpp)
+diff --git a/common/mediaserver.te b/common/mediaserver.te
+--- a/common/mediaserver.te
++++ b/common/mediaserver.te
+@@ -3,7 +3,6 @@
+ 
+ #unix_socket_send(mediaserver, camera, mm-qcamerad)
+ 
+-allow mediaserver tee_device:chr_file rw_file_perms;
+ allow mediaserver qdsp_device:chr_file r_file_perms;
+ 
+ allow mediaserver self:socket create_socket_perms_no_ioctl;
+diff --git a/common/mm-pp-daemon.te b/common/mm-pp-daemon.te
+--- a/common/mm-pp-daemon.te
++++ b/common/mm-pp-daemon.te
+@@ -1,4 +1,5 @@
+ type mm-pp-daemon, domain;
++typeattribute mm-pp-daemon socket_between_core_and_vendor_violators;
+ type mm-pp-daemon_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(mm-pp-daemon)
+@@ -43,7 +44,7 @@
+   # This allows pp-daemon to use shell commands to blank
+   # the display - it uses input keyevent to do this
+   allow mm-pp-daemon { vendor_shell_exec
+-                      #zygote_exec 
++                      #zygote_exec
+   }:file rx_file_perms;
+   allow mm-pp-daemon system_file:file x_file_perms;
+   allow mm-pp-daemon self:process ptrace;
+diff --git a/common/mm-qcamerad.te b/common/mm-qcamerad.te
+--- a/common/mm-qcamerad.te
++++ b/common/mm-qcamerad.te
+@@ -1,4 +1,6 @@
+ type mm-qcamerad, domain;
++typeattribute mm-qcamerad data_between_core_and_vendor_violators;
++typeattribute mm-qcamerad socket_between_core_and_vendor_violators;
+ type mm-qcamerad_exec, exec_type, vendor_file_type, file_type;
+ init_daemon_domain(mm-qcamerad)
+ 
+diff --git a/common/mmi.te b/common/mmi.te
+--- a/common/mmi.te
++++ b/common/mmi.te
+@@ -1,5 +1,6 @@
+ #integrated process
+ type mmi, domain;
++typeattribute mmi data_between_core_and_vendor_violators;
+ type mmi_exec, exec_type, vendor_file_type, file_type;
+ 
+ #started by init
+@@ -9,7 +10,7 @@
+ allow mmi self:socket create_socket_perms_no_ioctl;
+ allow mmi self:{ netlink_socket netlink_generic_socket } create_socket_perms_no_ioctl;
+ allow mmi self:udp_socket create_socket_perms_no_ioctl;
+-allow mmi self:capability { sys_nice dac_override setuid setgid fowner chown fsetid kill net_admin sys_module net_raw};
++allow mmi self:capability { sys_nice  setuid setgid fowner chown fsetid kill net_admin sys_module net_raw};
+ allow mmi self:capability2 wake_alarm;
+ 
+ #For various devices
+@@ -37,7 +38,6 @@
+ allow mmi sensors_persist_file:file create_file_perms;
+ 
+ #wifi case
+-allow mmi system_file:file x_file_perms;
+ #allow mmi wpa_exec:file rx_file_perms;
+ allow mmi wcnss_service_exec:file rx_file_perms;
+ allow mmi kernel:key search;
+@@ -57,7 +57,7 @@
+ #bluetooth case
+ allow mmi bluetooth_data_file:dir rw_dir_perms;
+ allow mmi bluetooth_data_file:file create_file_perms;
+-set_prop(mmi, bluetooth_prop)
++set_prop(mmi, qcom_bluetooth_prop)
+ allow mmi smd_device:chr_file rw_file_perms;
+ allow mmi persist_bluetooth_file:file r_file_perms;
+ allow mmi wcnss_filter:unix_stream_socket connectto;
+diff --git a/common/mpdecision.te b/common/mpdecision.te
+--- a/common/mpdecision.te
++++ b/common/mpdecision.te
+@@ -1,4 +1,6 @@
+ type mpdecision, domain, mlstrustedsubject;
++typeattribute mpdecision data_between_core_and_vendor_violators;
++typeattribute mpdecision socket_between_core_and_vendor_violators;
+ type mpdecision_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(mpdecision)
+@@ -27,7 +29,7 @@
+ 
+ #policies for mpctl
+ #mpctl socket
+-allow mpdecision self:capability { net_admin chown dac_override fsetid sys_nice };
++allow mpdecision self:capability { net_admin chown  fsetid sys_nice };
+ allow mpdecision mpctl_socket:dir rw_dir_perms;
+ allow mpdecision mpctl_socket:sock_file create_file_perms;
+ 
+diff --git a/common/msm_irqbalanced.te b/common/msm_irqbalanced.te
+--- a/common/msm_irqbalanced.te
++++ b/common/msm_irqbalanced.te
+@@ -5,7 +5,7 @@
+ 
+ allow msm_irqbalanced cgroup:dir { create add_name };
+ allow msm_irqbalanced { proc sysfs_devices_system_cpu }:file w_file_perms;
+-allow msm_irqbalanced self:capability { setuid setgid dac_override };
++allow msm_irqbalanced self:capability { setuid setgid  };
+ r_dir_file(msm_irqbalanced, sysfs_rqstats);
+ 
+ # access smp_affinity
+diff --git a/common/netmgrd.te b/common/netmgrd.te
+--- a/common/netmgrd.te
++++ b/common/netmgrd.te
+@@ -1,4 +1,6 @@
+ type netmgrd, domain;
++typeattribute netmgrd data_between_core_and_vendor_violators;
++typeattribute netmgrd socket_between_core_and_vendor_violators;
+ type netmgrd_exec, exec_type, vendor_file_type, file_type;
+ net_domain(netmgrd)
+ init_daemon_domain(netmgrd)
+@@ -32,7 +34,6 @@
+ #Allow netutils usage
+ use_netutils(netmgrd)
+ allow netutils_wrapper netmgrd_data_file:file rw_file_perms;
+-allow netutils_wrapper wcnss_service_exec:file rx_file_perms;
+ allow netmgrd netutils_wrapper:process sigkill;
+ 
+ #Allow operations on different types of sockets
+@@ -54,12 +55,10 @@
+ 
+ #Allow address configuration
+ #Allow setting of DNS and GW Android properties
+-set_prop(netmgrd, system_prop)
+-set_prop(netmgrd, net_radio_prop)
++set_prop(netmgrd, qcom_netmgrd_prop)
+ set_prop(netmgrd, xlat_prop)
+ 
+ #Allow execution of commands in shell
+-allow netmgrd system_file:file x_file_perms;
+ 
+ allow netmgrd self:socket create_socket_perms;
+ allow netmgrd sysfs_esoc:dir r_dir_perms;
+@@ -98,5 +97,3 @@
+ hwbinder_use(netmgrd)
+ binder_call(netmgrd, netd)
+ allow netmgrd system_net_netd_hwservice:hwservice_manager find;
+-allow netmgrd netd_service:service_manager find;
+-allow netmgrd dnsresolver_service:service_manager find;
+diff --git a/common/platform_app.te b/common/platform_app.te
+--- a/common/platform_app.te
++++ b/common/platform_app.te
+@@ -19,7 +19,7 @@
+ # Allow hbtp hal Service to be found
+ hal_client_domain(platform_app, hal_hbtp)
+ 
+-#get_prop(platform_app, bluetooth_prop)
++#get_prop(platform_app, qcom_bluetooth_prop)
+ get_prop(platform_app, debug_gralloc_prop)
+ 
+ #for perf-hal call
+diff --git a/common/port-bridge.te b/common/port-bridge.te
+--- a/common/port-bridge.te
++++ b/common/port-bridge.te
+@@ -12,7 +12,6 @@
+ allow port-bridge port-bridge:netlink_kobject_uevent_socket { create bind read };
+ 
+ # Allow process capabilities
+-allow port-bridge port-bridge:capability dac_override;
+ 
+ allow port-bridge {
+     # Allow operations on mhi transport
+diff --git a/common/property.te b/common/property.te
+--- a/common/property.te
++++ b/common/property.te
+@@ -23,123 +23,132 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ # property for uicc_daemon
+-type uicc_prop, property_type;
+-type qcom_ims_prop, property_type;
+-type ctl_qmuxd_prop, property_type;
+-type ctl_netmgrd_prop, property_type;
+-type ctl_port-bridge_prop, property_type;
++vendor_public_prop(uicc_prop)
++vendor_public_prop(qcom_ims_prop)
++vendor_public_prop(ctl_qmuxd_prop)
++vendor_public_prop(ctl_netmgrd_prop)
++vendor_public_prop(ctl_port-bridge_prop)
+ 
+ # property for LKCore ctl start
+-type ctl_LKCore_prop, property_type;
++vendor_public_prop(ctl_LKCore_prop)
+ 
+ # properties for usf daemons
+-type usf_prop, property_type;
++system_public_prop(usf_prop)
+ 
+-type freq_prop, property_type;
+-type perfd_prop, property_type;
+-type vm_bms_prop, property_type; #To start vm_bms
+-type qti_prop, property_type;
+-type ipacm_prop, property_type;
+-type ipacm-diag_prop, property_type;
+-type sensors_prop, property_type;
+-type msm_irqbalance_prop, property_type;
+-type msm_irqbl_sdm630_prop, property_type;
+-type camera_prop, property_type;
+-type spcomlib_prop, property_type;
+-type sdm_idle_time_prop, property_type;
+-type vendor_display_prop, property_type;
+-type scr_enabled_prop, property_type;
+-type bg_daemon_prop, property_type;
+-type bg_boot_complete_prop, property_type;
+-type opengles_prop, property_type;
+-type mdm_helper_prop, property_type;
+-type mpdecision_prop, property_type;
+-type gamed_prop, property_type;
+-type vendor_mpctl_prop, property_type;
++vendor_public_prop(freq_prop)
++vendor_public_prop(perfd_prop)
++vendor_public_prop(vm_bms_prop) #To start vm_bms
++vendor_public_prop(qti_prop)
++vendor_public_prop(ipacm_prop)
++vendor_public_prop(ipacm-diag_prop)
++vendor_public_prop(sensors_prop)
++vendor_public_prop(msm_irqbalance_prop)
++vendor_public_prop(msm_irqbl_sdm630_prop)
++system_public_prop(camera_prop)
++vendor_public_prop(spcomlib_prop)
++system_public_prop(sdm_idle_time_prop)
++vendor_public_prop(vendor_display_prop)
++vendor_public_prop(scr_enabled_prop)
++vendor_public_prop(bg_daemon_prop)
++vendor_public_prop(bg_boot_complete_prop)
++system_public_prop(opengles_prop)
++vendor_public_prop(mdm_helper_prop)
++vendor_public_prop(mpdecision_prop)
++vendor_public_prop(gamed_prop)
++vendor_public_prop(vendor_mpctl_prop)
+ 
+ # Wifi version recorder
+-type vendor_wifi_version, property_type;
++vendor_public_prop(vendor_wifi_version)
+ 
+ #Needed for  ubwc support
+-type debug_gralloc_prop, property_type;
++system_public_prop(debug_gralloc_prop)
+ 
+-type fm_prop, property_type;
+-type chgdiabled_prop, property_type;
++vendor_public_prop(fm_prop)
++vendor_public_prop(chgdiabled_prop)
+ 
+ #properites for netd
+-type netd_prop, property_type;
++system_public_prop(netd_prop)
+ 
+-type xlat_prop, property_type;
++vendor_public_prop(xlat_prop)
+ 
+ # property for location
+-type location_prop, property_type;
++system_public_prop(location_prop)
+ 
+ #properites for init.qcom.sh script
+-type rmnet_mux_prop, property_type;
+-type sys_usb_controller_prop, property_type;
+-type sys_usb_configfs_prop, property_type;
++vendor_public_prop(rmnet_mux_prop)
++vendor_public_prop(sys_usb_controller_prop)
++vendor_public_prop(sys_usb_configfs_prop)
+ 
+-type sys_usb_tethering_prop, property_type;
++system_public_prop(sys_usb_tethering_prop)
+ 
+-type coresight_prop, property_type;
++vendor_public_prop(coresight_prop)
+ 
+ 
+-type ctl_hbtp_prop, property_type;
+-type alarm_boot_prop, property_type;
+-type boot_animation_prop, property_type;
++vendor_public_prop(ctl_hbtp_prop)
++vendor_public_prop(alarm_boot_prop)
++system_public_prop(boot_animation_prop)
+ 
+ # DOLBY_START
+-type dolby_prop, property_type;
++system_public_prop(dolby_prop)
+ # DOLBY_END
+ 
+-type wififtmd_prop, property_type;
++vendor_public_prop(wififtmd_prop)
+ 
+ # WIGIG
+-type wigig_prop, property_type;
+-type fst_prop, property_type;
+-type ctl_vendor_wigigsvc_prop, property_type;
++vendor_public_prop(wigig_prop)
++vendor_public_prop(fst_prop)
++vendor_public_prop(ctl_vendor_wigigsvc_prop)
+ 
+-type alarm_handled_prop, property_type;
+-type alarm_instance_prop, property_type;
++system_public_prop(alarm_handled_prop)
++system_public_prop(alarm_instance_prop)
+ 
+ #HWUI property
+-type hwui_prop, property_type;
++system_public_prop(hwui_prop)
+ 
+-type graphics_vulkan_prop, property_type;
++system_public_prop(graphics_vulkan_prop)
+ 
+ #Bservice property
+-type bservice_prop, property_type;
++system_public_prop(bservice_prop)
+ 
+ #Delayed Service Reschedule property
+-type reschedule_service_prop, property_type;
++system_public_prop(reschedule_service_prop)
+ 
+ #mdlog property
+-type diag_mdlog_prop, property_type;
++vendor_public_prop(diag_mdlog_prop)
+ 
+ #boot mode property
+-type boot_mode_prop, property_type;
++vendor_public_prop(boot_mode_prop)
+ #properties for nfc
+-type nfc_nq_prop, property_type;
+-type ppd_prop, property_type;
+-type qemu_gles_prop, property_type;
++vendor_public_prop(nfc_nq_prop)
++vendor_public_prop(ppd_prop)
++system_public_prop(qemu_gles_prop)
+ 
+-type vendor_rild_libpath_prop, property_type;
++vendor_public_prop(vendor_rild_libpath_prop)
+ 
+ #Peripheral manager
+-type per_mgr_state_prop, property_type;
++vendor_public_prop(per_mgr_state_prop)
+ 
+-type vendor_system_prop, property_type;
++vendor_public_prop(vendor_system_prop)
+ 
+ #crash property
+-type crash_prop, property_type;
++vendor_public_prop(crash_prop)
+ 
+ #qdma property
+-type qdma_prop, property_type;
++vendor_public_prop(qdma_prop)
+ 
+-type mmi_prop, property_type;
++vendor_public_prop(mmi_prop)
+ 
+ #imsrcsservice
+-type ctl_vendor_imsrcsservice_prop, property_type;
++vendor_public_prop(ctl_vendor_imsrcsservice_prop)
+ 
+ #wlan-vendor prop
+-type vendor_wifi_prop, property_type;
++vendor_public_prop(vendor_wifi_prop)
++
++# QCOM transport/radio properties are separate from private framework state.
++vendor_public_prop(qcom_bluetooth_prop)
++vendor_public_prop(qcom_radio_prop)
++vendor_public_prop(qcom_netmgrd_prop)
++vendor_public_prop(qcom_panel_prop)
++
++vendor_public_prop(qcom_tee_state_prop)
++vendor_public_prop(qcom_dynamic_nv_prop)
+diff --git a/common/property_contexts b/common/property_contexts
+--- a/common/property_contexts
++++ b/common/property_contexts
+@@ -22,9 +22,9 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-wc_transport.              u:object_r:bluetooth_prop:s0
+-vendor.wc_transport.       u:object_r:bluetooth_prop:s0
+-persist.vendor.bt.         u:object_r:bluetooth_prop:s0
++wc_transport.              u:object_r:qcom_bluetooth_prop:s0
++vendor.wc_transport.       u:object_r:qcom_bluetooth_prop:s0
++persist.vendor.bt.         u:object_r:qcom_bluetooth_prop:s0
+ sys.usb_uicc.              u:object_r:uicc_prop:s0
+ dolby.audio.               u:object_r:audio_prop:s0
+ vendor.ims.                u:object_r:qcom_ims_prop:s0
+@@ -32,8 +32,8 @@
+ vendor.hw.fm.              u:object_r:fm_prop:s0
+ sys.usf.                   u:object_r:usf_prop:s0
+ ro.qc.sdk.us.                 u:object_r:usf_prop:s0
+-radio.atfwd.               u:object_r:radio_prop:s0
+-persist.radio.atfwd.       u:object_r:radio_prop:s0
++radio.atfwd.               u:object_r:qcom_radio_prop:s0
++persist.radio.atfwd.       u:object_r:qcom_radio_prop:s0
+ ctl.qmuxd                  u:object_r:ctl_qmuxd_prop:s0
+ ctl.netmgrd                u:object_r:ctl_netmgrd_prop:s0
+ ctl.port-bridge            u:object_r:ctl_port-bridge_prop:s0
+@@ -43,7 +43,7 @@
+ ctl.gamed                  u:object_r:gamed_prop:s0
+ ctl.iop                    u:object_r:perfd_prop:s0
+ ctl.vm_bms                 u:object_r:vm_bms_prop:s0
+-ro.qualcomm.bluetooth.        u:object_r:bluetooth_prop:s0
++ro.qualcomm.bluetooth.        u:object_r:qcom_bluetooth_prop:s0
+ ctl.ipacm                  u:object_r:ipacm_prop:s0
+ ctl.ipacm-diag             u:object_r:ipacm-diag_prop:s0
+ ctl.qti                    u:object_r:qti_prop:s0
+@@ -60,8 +60,7 @@
+ ro.vendor.scr_enabled         u:object_r:scr_enabled_prop:s0
+ vendor.bg_reset               u:object_r:bg_daemon_prop:s0
+ vendor.bg.boot_complete       u:object_r:bg_boot_complete_prop:s0
+-ro.opengles.version           u:object_r:opengles_prop:s0
+-ro.qualcomm.bt.hci_transport  u:object_r:bluetooth_prop:s0
++ro.qualcomm.bt.hci_transport  u:object_r:qcom_bluetooth_prop:s0
+ ctl.mdm_helper             u:object_r:mdm_helper_prop:s0
+ ctl.mpdecision             u:object_r:mpdecision_prop:s0
+ qualcomm.perf.cores_online u:object_r:mpdecision_prop:s0
+@@ -70,8 +69,6 @@
+ location.                  u:object_r:location_prop:s0
+ qc.izat.                   u:object_r:location_prop:s0
+ persist.rmnet.mux          u:object_r:rmnet_mux_prop:s0
+-sys.usb.controller         u:object_r:sys_usb_controller_prop:s0
+-sys.usb.configfs           u:object_r:sys_usb_configfs_prop:s0
+ sys.usb.tethering          u:object_r:sys_usb_tethering_prop:s0
+ ro.dbg.coresight.cfg_file     u:object_r:coresight_prop:s0
+ ctl.hbtp                   u:object_r:ctl_hbtp_prop:s0
+@@ -84,7 +81,7 @@
+ dolby.                     u:object_r:dolby_prop:s0
+ # DOLBY_END
+ wifi.ftmd.                 u:object_r:wififtmd_prop:s0
+-ro.bluetooth.              u:object_r:bluetooth_prop:s0
++ro.bluetooth.              u:object_r:qcom_bluetooth_prop:s0
+ # WIGIG
+ persist.vendor.wigig.       u:object_r:wigig_prop:s0
+ vendor.wigig.               u:object_r:wigig_prop:s0
+@@ -116,9 +113,9 @@
+ # Peripheral Manager
+ vendor.peripheral.         u:object_r:per_mgr_state_prop:s0
+ 
+-persist.vendor.radio       u:object_r:radio_prop:s0
+-vendor.radio               u:object_r:radio_prop:s0
+-ro.vendor.ril.             u:object_r:radio_prop:s0
++persist.vendor.radio       u:object_r:qcom_radio_prop:s0
++vendor.radio               u:object_r:qcom_radio_prop:s0
++ro.vendor.ril.             u:object_r:qcom_radio_prop:s0
+ persist.vendor.sys.        u:object_r:vendor_system_prop:s0
+ 
+ # qdma property
+@@ -138,3 +135,28 @@
+ 
+ #vendor-wlan
+ vendor.wlan.  u:object_r:vendor_wifi_prop:s0
++
++# State published by the legacy netmgrd and board init script.
++net.r_rmnet              u:object_r:qcom_netmgrd_prop:s0
++net.usb                  u:object_r:qcom_netmgrd_prop:s0
++sys.panel.color          u:object_r:qcom_panel_prop:s0 exact string
++
++persist.vendor.dpm.        u:object_r:vendor_persist_dpm_prop:s0
++vendor.bluetooth.          u:object_r:qcom_bluetooth_prop:s0
++vendor.qcom.bluetooth.     u:object_r:qcom_bluetooth_prop:s0
++
++net.rmnet0 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet1 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet2 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet3 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet4 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet5 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet6 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet7 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet8 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet9 u:object_r:qcom_netmgrd_prop:s0
++net.rmnet_ u:object_r:qcom_netmgrd_prop:s0
++
++sys.listeners.registered u:object_r:qcom_tee_state_prop:s0 exact bool
++sys.keymaster.loaded u:object_r:qcom_tee_state_prop:s0 exact bool
++persist.sys.dynamic.nv u:object_r:qcom_dynamic_nv_prop:s0 exact string
+diff --git a/common/qcomsysd.te b/common/qcomsysd.te
+--- a/common/qcomsysd.te
++++ b/common/qcomsysd.te
+@@ -18,7 +18,7 @@
+ r_dir_file(qcomsysd, sysfs_socinfo)
+ allow qcomsysd sysfs_socinfo:file w_file_perms;
+ 
+-allow qcomsysd self:capability { dac_override sys_boot };
++allow qcomsysd self:capability {  sys_boot };
+ use_per_mgr(qcomsysd);
+ #allow qcomsysd access boot mode switch
+ set_prop(qcomsysd, boot_mode_prop)
+diff --git a/common/qlogd.te b/common/qlogd.te
+--- a/common/qlogd.te
++++ b/common/qlogd.te
+@@ -12,8 +12,8 @@
+ allow qlogd self:capability {
+     setuid
+     setgid
+-    dac_override
+-    dac_read_search
++
++
+     sys_admin
+     net_raw
+     net_admin
+@@ -28,7 +28,6 @@
+ # need to access system_data partitions for configration files
+ allow qlogd qlogd_data_file:dir rw_dir_perms;
+ allow qlogd qlogd_data_file:file create_file_perms;
+-allow qlogd system_file:file x_file_perms;
+ 
+ # need to create and listen socket
+ allow qlogd qlogd_socket:sock_file create_file_perms;
+diff --git a/common/qmuxd.te b/common/qmuxd.te
+--- a/common/qmuxd.te
++++ b/common/qmuxd.te
+@@ -1,4 +1,5 @@
+ type qmuxd, domain;
++typeattribute qmuxd socket_between_core_and_vendor_violators;
+ type qmuxd_exec, exec_type, vendor_file_type, file_type;
+ net_domain(qmuxd)
+ init_daemon_domain(qmuxd)
+@@ -37,7 +38,7 @@
+     sysfs_hsic_modem_wait
+ }:file w_file_perms;
+ 
+-allow qmuxd self:capability { setuid setgid setpcap dac_override };
++allow qmuxd self:capability { setuid setgid setpcap  };
+ 
+ #Allow qmuxd to have the CAP_BLOCK_SUSPEND capability
+ wakelock_use(qmuxd)
+diff --git a/common/qseecomd.te b/common/qseecomd.te
+--- a/common/qseecomd.te
++++ b/common/qseecomd.te
+@@ -60,7 +60,7 @@
+ binder_call(tee, surfaceflinger)
+ #binder_use(tee)
+ 
+-set_prop(tee, system_prop);
++set_prop(tee, qcom_tee_state_prop);
+ 
+ 
+ userdebug_or_eng(`
+diff --git a/common/qti-logkit.te b/common/qti-logkit.te
+--- a/common/qti-logkit.te
++++ b/common/qti-logkit.te
+@@ -27,6 +27,7 @@
+ 
+ # qti_logkit
+ type qti_logkit, domain, mlstrustedsubject;
++typeattribute qti_logkit data_between_core_and_vendor_violators;
+ init_daemon_domain(qti_logkit)
+ type qti_logkit_exec, exec_type, vendor_file_type, file_type;
+ 
+@@ -70,7 +71,6 @@
+ #binder_use(qti_logkit)
+ allow qti_logkit vendor_shell_exec:file { rx_file_perms };
+ allow qti_logkit sysfs:file write;
+-allow qti_logkit system_file:file x_file_perms;
+ binder_call(qti_logkit, system_server)
+ 
+ # allow logcat access
+diff --git a/common/qti.te b/common/qti.te
+--- a/common/qti.te
++++ b/common/qti.te
+@@ -21,7 +21,7 @@
+ 
+ allow qti self:socket ioctl;
+ allowxperm qti self:socket ioctl msm_sock_ipc_ioctls;
+-allow qti { vendor_shell_exec system_file }:file rx_file_perms;
++allow qti { vendor_shell_exec vendor_toolbox_exec }:file rx_file_perms;
+ 
+ allow qti sysfs_data:file r_file_perms;
+ 
+diff --git a/common/qti_logkit_app.te b/common/qti_logkit_app.te
+--- a/common/qti_logkit_app.te
++++ b/common/qti_logkit_app.te
+@@ -75,7 +75,6 @@
+ allow qti_logkit_app wcnss_service_exec:file rx_file_perms;
+ 
+ # bugreport
+-set_prop(qti_logkit_app, ctl_dumpstate_prop)
+ unix_socket_connect(qti_logkit_app, dumpstate, dumpstate)
+ 
+ # ANR
+diff --git a/common/qvrd.te b/common/qvrd.te
+--- a/common/qvrd.te
++++ b/common/qvrd.te
+@@ -30,7 +30,7 @@
+ #
+ 
+ userdebug_or_eng(` allow qvrd diag_device:chr_file rw_file_perms');
+-r_dir_file(qvrd, vendor_file)
++r_dir_file(qvrd, vendor_configs_file)
+ r_dir_file(qvrd, sysfs_kgsl)
+ 
+ #
+diff --git a/common/recovery.te b/common/recovery.te
+--- a/common/recovery.te
++++ b/common/recovery.te
+@@ -23,6 +23,6 @@
+     allow recovery configfs:file rw_file_perms;
+     allow recovery configfs:dir rw_dir_perms;
+     set_prop(recovery, ffs_config_prop)
+-    get_prop(recovery, sys_usb_controller_prop)
++    get_prop(recovery, usb_control_prop)
+     get_prop(recovery, boot_mode_prop)
+ ')
+diff --git a/common/rfs_access.te b/common/rfs_access.te
+--- a/common/rfs_access.te
++++ b/common/rfs_access.te
+@@ -1,5 +1,6 @@
+ # rfs_access - rfs_access daemon
+ type rfs_access, domain;
++typeattribute rfs_access data_between_core_and_vendor_violators;
+ type rfs_access_exec, exec_type, vendor_file_type, file_type;
+ init_daemon_domain(rfs_access)
+ 
+@@ -64,11 +65,11 @@
+ # The below permissions are required to recursively update the folder ownership
+ # to the new values in the OEM range.
+ 
+-allow rfs_access self:capability { dac_read_search chown dac_override };
++allow rfs_access self:capability {  chown  };
+ 
+ #For access to the kmsg device
+ allow rfs_access kmsg_device:chr_file w_file_perms;
+ 
+ #Prevent other domains from accessing RFS data files.
+-neverallow { domain -rfs_access -kernel -recovery -init userdebug_or_eng(`-su') -qti_init_shell } rfs_file:dir create_dir_perms;
+-neverallow { domain -rfs_access -kernel -recovery -init userdebug_or_eng(`-su') -qti_init_shell } rfs_file:file create_file_perms;
++neverallow { domain -rfs_access -kernel -recovery -init -vendor_init userdebug_or_eng(`-su') -qti_init_shell } rfs_file:dir create_dir_perms;
++neverallow { domain -rfs_access -kernel -recovery -init -vendor_init userdebug_or_eng(`-su') -qti_init_shell } rfs_file:file create_file_perms;
+diff --git a/common/ridl.te b/common/ridl.te
+--- a/common/ridl.te
++++ b/common/ridl.te
+@@ -27,6 +27,7 @@
+ 
+ # RIDL
+ type RIDL, domain;
++typeattribute RIDL data_between_core_and_vendor_violators;
+ type RIDL_exec, exec_type, vendor_file_type, file_type;
+ 
+ allow RIDL RIDL_socket:sock_file create_file_perms;
+@@ -67,7 +68,6 @@
+ #binder_use(RIDL)
+ allow RIDL vendor_shell_exec:file { rx_file_perms };
+ allow RIDL sysfs:file write;
+-allow RIDL system_file:file x_file_perms;
+ binder_call(RIDL, system_server)
+ 
+ # recovery
+diff --git a/common/sensors.te b/common/sensors.te
+--- a/common/sensors.te
++++ b/common/sensors.te
+@@ -1,5 +1,7 @@
+ # Policy for sensor daemon
+ type sensors, domain;
++typeattribute sensors data_between_core_and_vendor_violators;
++typeattribute sensors socket_between_core_and_vendor_violators;
+ type sensors_exec, exec_type, vendor_file_type, file_type;
+ 
+ # Started by init
+@@ -12,8 +14,8 @@
+     # Chown /data/misc/sensors/debug/ to nobody
+     chown
+     # Access /data/misc/sensors/debug and /data/system/sensors/settings
+-    dac_override
+-    dac_read_search
++
++
+     net_bind_service
+ };
+ 
+diff --git a/common/surfaceflinger.te b/common/surfaceflinger.te
+--- a/common/surfaceflinger.te
++++ b/common/surfaceflinger.te
+@@ -33,17 +33,14 @@
+ #Allow access to binder callback's to camera hal
+ binder_call(surfaceflinger, hal_camera_default)
+ 
+-allow surfaceflinger qdisplay_service:service_manager { add find };
+ 
+ #diag
+ userdebug_or_eng(`
+     diag_use(surfaceflinger)
+ ')
+ 
+-allow surfaceflinger {
+-    debug_gralloc_prop
+-    sdm_idle_time_prop
+-}:file r_file_perms;
++get_prop(surfaceflinger, debug_gralloc_prop)
++get_prop(surfaceflinger, sdm_idle_time_prop)
+ 
+ #set qemu.gles prop
+ set_prop(surfaceflinger, qemu_gles_prop)
+diff --git a/common/system_app.te b/common/system_app.te
+--- a/common/system_app.te
++++ b/common/system_app.te
+@@ -59,7 +59,7 @@
+   allow system_app ssr_ramdump_data_file:file r_file_perms;
+ 
+   # allow system app to read crash_prop
+-  allow system_app crash_prop:file r_file_perms;
++  get_prop(system_app, crash_prop)
+ ')
+ 
+ allow system_app cnd_data_file:dir w_dir_perms;
+@@ -137,7 +137,6 @@
+ #allow system_app qti_logkit_priv_socket:sock_file r_file_perms;
+ 
+ # iwconfig
+-allow system_app wcnss_service_exec:file rx_file_perms;
+ 
+ # bugreport
+ set_prop(system_app, ctl_dumpstate_prop)
+@@ -174,7 +173,7 @@
+ # required for FM App to connectto wcnss_filter sockets
+ # serial device ttyHS0 (transport layer for FM)
+ allow system_app serial_device:chr_file rw_file_perms;
+-set_prop(system_app, bluetooth_prop)
++set_prop(system_app, qcom_bluetooth_prop)
+ # access unix sockets for fm application
+ unix_socket_connect(system_app,bluetooth, bluetooth)
+ # access  wcnss_filter from fm app
+diff --git a/common/system_server.te b/common/system_server.te
+--- a/common/system_server.te
++++ b/common/system_server.te
+@@ -35,7 +35,7 @@
+ allow system_server qtitetherservice_service:service_manager find;
+ 
+ #For ANT tty communication and to set wc_transport prop
+-set_prop(system_server, bluetooth_prop)
++set_prop(system_server, qcom_bluetooth_prop)
+ set_prop(system_server, usf_prop)
+ set_prop(system_server, alarm_handled_prop)
+ set_prop(system_server, alarm_instance_prop)
+@@ -59,8 +59,6 @@
+ #allow system_server location:unix_stream_socket connectto;
+ allow system_server location_data_file:{ file fifo_file } create_file_perms;
+ allow system_server location_data_file:dir create_dir_perms;
+-allow system_server { location_app_data_file mdtp_svc_app_data_file } :file rw_file_perms;
+-allow system_server { location_app_data_file mdtp_svc_app_data_file } :dir r_dir_perms;
+ #allow system_server location_socket:sock_file create_file_perms;
+ set_prop(system_server, location_prop)
+ 
+@@ -79,7 +77,6 @@
+     # graphics_device, audio_device, tee_device is for WFD
+     graphics_device
+     audio_device
+-    tee_device
+     #allow access to power control ANT chip
+     bt_device
+ }:chr_file rw_file_perms;
+@@ -108,12 +105,8 @@
+ allow system_server graphics_device:dir r_dir_perms;
+ 
+ # For QSEE Svc Apps
+-allow system_server qsee_svc_app_data_file:file rw_file_perms;
+-allow system_server qsee_svc_app_data_file:dir r_dir_perms;
+ 
+ # For IMS Helper Svc App
+-allow system_server imshelper_app_data_file:file rw_file_perms;
+-allow system_server imshelper_app_data_file:dir r_dir_perms;
+ 
+ #Allow access to netmgrd socket
+ #netmgr_socket(system_server);
+@@ -163,12 +156,12 @@
+ 
+ # timerslack_ns
+ allow system_server { location_app system_app } :file write;
+-allow system_server opengles_prop:file r_file_perms;
+-allow system_server graphics_vulkan_prop:file r_file_perms;
++get_prop(system_server, graphics_config_prop)
++get_prop(system_server, graphics_vulkan_prop)
+ 
+-allow system_server hwui_prop:file r_file_perms;
+-allow system_server bservice_prop:file r_file_perms;
+-allow system_server reschedule_service_prop:file r_file_perms;
++get_prop(system_server, hwui_prop)
++get_prop(system_server, bservice_prop)
++get_prop(system_server, reschedule_service_prop)
+ allow system_server appdomain:file w_file_perms;
+ 
+ get_prop(system_server, vendor_mpctl_prop)
+@@ -185,8 +178,6 @@
+ hal_client_domain(system_server, hal_sensors)
+ 
+ # allow access to QDMA
+-allow system_server { qdma_app_data_file } :file rw_file_perms;
+-allow system_server { qdma_app_data_file } :dir r_dir_perms;
+ 
+ # allow WIGIG framework hosted in system_server to access wigig_hal
+ hal_client_domain(system_server, hal_wigig)
+diff --git a/common/thermal-engine.te b/common/thermal-engine.te
+--- a/common/thermal-engine.te
++++ b/common/thermal-engine.te
+@@ -1,5 +1,6 @@
+ # Thermal-engine daemon
+ type thermal-engine, domain;
++typeattribute thermal-engine socket_between_core_and_vendor_violators;
+ type thermal-engine_exec, exec_type, vendor_file_type, file_type;
+ 
+ # Started by init
+@@ -12,8 +13,8 @@
+ allow thermal-engine { thermal_device smem_log_device }:chr_file rw_file_perms;
+ 
+ allow thermal-engine self:capability {
+-    dac_read_search
+-    dac_override
++
++
+     fsetid
+     sys_boot
+ };
+diff --git a/common/time_daemon.te b/common/time_daemon.te
+--- a/common/time_daemon.te
++++ b/common/time_daemon.te
+@@ -1,5 +1,6 @@
+ # Policies for time daemon
+ type time_daemon, domain, mlstrustedsubject;
++typeattribute time_daemon socket_between_core_and_vendor_violators;
+ type time_daemon_exec, exec_type, vendor_file_type, file_type;
+ type time_data_file, file_type, data_file_type;
+ 
+diff --git a/common/touchfusion.te b/common/touchfusion.te
+--- a/common/touchfusion.te
++++ b/common/touchfusion.te
+@@ -32,7 +32,6 @@
+ 
+ init_daemon_domain(touchfusion)
+ 
+-domain_auto_trans(kernel, touchfusion_exec, touchfusion);
+ 
+ allow touchfusion kmsg_device:chr_file rw_file_perms;
+ 
+diff --git a/common/uncrypt.te b/common/uncrypt.te
+--- a/common/uncrypt.te
++++ b/common/uncrypt.te
+@@ -26,5 +26,5 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ # Allow uncrypting of RIDL
+-allow uncrypt RIDL_data_file:file r_file_perms;
+-allow uncrypt RIDL_data_file:dir r_dir_perms;
++userdebug_or_eng(`allow uncrypt RIDL_data_file:file r_file_perms;')
++userdebug_or_eng(`allow uncrypt RIDL_data_file:dir r_dir_perms;')
+diff --git a/common/update_engine.te b/common/update_engine.te
+--- a/common/update_engine.te
++++ b/common/update_engine.te
+@@ -26,10 +26,10 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ # Allow gotaab of RIDL and qti-logkit
+-allow update_engine RIDL_data_file:file r_file_perms;
+-allow update_engine RIDL_data_file:dir r_dir_perms;
+-allow update_engine qti_logkit_priv_data_file:file r_file_perms;
+-allow update_engine qti_logkit_priv_data_file:dir r_dir_perms;
++userdebug_or_eng(`allow update_engine RIDL_data_file:file r_file_perms;')
++userdebug_or_eng(`allow update_engine RIDL_data_file:dir r_dir_perms;')
++userdebug_or_eng(`allow update_engine qti_logkit_priv_data_file:file r_file_perms;')
++userdebug_or_eng(`allow update_engine qti_logkit_priv_data_file:dir r_dir_perms;')
+ allow update_engine storage_file:file r_file_perms;
+ allow update_engine storage_file:dir r_dir_perms;
+ allow update_engine fuse:dir r_dir_perms;
+diff --git a/common/usb_uicc_daemon.te b/common/usb_uicc_daemon.te
+--- a/common/usb_uicc_daemon.te
++++ b/common/usb_uicc_daemon.te
+@@ -8,5 +8,5 @@
+ allow usb_uicc_daemon self:socket create_socket_perms_no_ioctl;
+ allow usb_uicc_daemon usb_uicc_device:chr_file rw_file_perms;
+ allow usb_uicc_daemon sysfs_usb_uicc:file rw_file_perms;
+-allow usb_uicc_daemon sysfs_usb_uicc:dir rw_dir_perms;
++allow usb_uicc_daemon sysfs_usb_uicc:dir r_dir_perms;
+ set_prop(usb_uicc_daemon, uicc_prop)
+diff --git a/common/usf.te b/common/usf.te
+--- a/common/usf.te
++++ b/common/usf.te
+@@ -1,5 +1,7 @@
+ # Policy for usf daemons
+ type usf, domain;
++typeattribute usf data_between_core_and_vendor_violators;
++typeattribute usf socket_between_core_and_vendor_violators;
+ type usf_exec, exec_type, vendor_file_type, file_type;
+ 
+ # Started by init
+diff --git a/common/vold.te b/common/vold.te
+--- a/common/vold.te
++++ b/common/vold.te
+@@ -1,4 +1,3 @@
+-allow vold tee_device:chr_file rw_file_perms;
+ allow vold self:capability sys_boot;
+ allow vold cache_file:dir w_dir_perms;
+ allow vold { fscklogs cache_file }:file create_file_perms;
+diff --git a/common/wcnss_filter.te b/common/wcnss_filter.te
+--- a/common/wcnss_filter.te
++++ b/common/wcnss_filter.te
+@@ -26,6 +26,8 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type wcnss_filter, domain;
++typeattribute wcnss_filter data_between_core_and_vendor_violators;
++typeattribute wcnss_filter socket_between_core_and_vendor_violators;
+ type wcnss_filter_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(wcnss_filter)
+@@ -41,7 +43,7 @@
+ 
+ #wakelock policy
+ wakelock_use(wcnss_filter);
+-set_prop(wcnss_filter, bluetooth_prop)
++set_prop(wcnss_filter, qcom_bluetooth_prop)
+ 
+ #For bluetooth firmware
+ r_dir_file(wcnss_filter, bt_firmware_file)
+diff --git a/common/wcnss_service.te b/common/wcnss_service.te
+--- a/common/wcnss_service.te
++++ b/common/wcnss_service.te
+@@ -1,4 +1,5 @@
+ type wcnss_service, domain;
++typeattribute wcnss_service data_between_core_and_vendor_violators;
+ type wcnss_service_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(wcnss_service)
+@@ -11,7 +12,7 @@
+ allow wcnss_service wifi_data_file:dir w_dir_perms;
+ allow wcnss_service wifi_data_file:file create_file_perms;
+ 
+-set_prop(wcnss_service, system_prop)
++set_prop(wcnss_service, qcom_dynamic_nv_prop)
+ 
+ allow wcnss_service wifi_vendor_data_file:dir w_dir_perms;
+ allow wcnss_service wifi_vendor_data_file:file create_file_perms;
+diff --git a/common/wifi_ftmd.te b/common/wifi_ftmd.te
+--- a/common/wifi_ftmd.te
++++ b/common/wifi_ftmd.te
+@@ -25,6 +25,7 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type wifi_ftmd, domain;
++typeattribute wifi_ftmd socket_between_core_and_vendor_violators;
+ type wifi_ftmd_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(wifi_ftmd)
+diff --git a/common/wificond.te b/common/wificond.te
+--- a/common/wificond.te
++++ b/common/wificond.te
+@@ -25,7 +25,6 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-allow wificond proc:file r_file_perms;
+ allow wificond wifi_vendor_data_file:dir w_dir_perms;
+ allow wificond wifi_vendor_data_file:file create_file_perms;
+ # allow create/remove bridge interface and read mac addr ioctl privilege
+diff --git a/common/wigighalsvc.te b/common/wigighalsvc.te
+--- a/common/wigighalsvc.te
++++ b/common/wigighalsvc.te
+@@ -26,6 +26,8 @@
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ type wigighalsvc, domain;
++typeattribute wigighalsvc socket_between_core_and_vendor_violators;
++typeattribute wigighalsvc data_between_core_and_vendor_violators;
+ type wigighalsvc_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(wigighalsvc)
+diff --git a/common/zygote.te b/common/zygote.te
+--- a/common/zygote.te
++++ b/common/zygote.te
+@@ -25,9 +25,8 @@
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-allow zygote debug_gralloc_prop:file r_file_perms;
++get_prop(zygote, debug_gralloc_prop)
+ # persist.service.bdroid.bdaddr hw.cabl.level
+-#set_prop(zygote, bluetooth_prop)
+-set_prop(zygote, ppd_prop)
++#set_prop(zygote, qcom_bluetooth_prop)
+ set_prop(zygote, system_prop)
+ set_prop(zygote, qemu_gles_prop)
+diff --git a/legacy-common/audioserver.te b/legacy-common/audioserver.te
+--- a/legacy-common/audioserver.te
++++ b/legacy-common/audioserver.te
+@@ -7,5 +7,7 @@
+ unix_socket_connect(audioserver, thermal, thermal-engine)
+ 
+ # Allow communication with peripheral manager
+-use_per_mgr(audioserver)
++binder_use(audioserver)
++binder_call(audioserver, per_mgr)
++binder_call(per_mgr, audioserver)
+ allow audioserver binder_per_mgr_service:service_manager find;
+diff --git a/legacy-common/bluetooth_loader.te b/legacy-common/bluetooth_loader.te
+--- a/legacy-common/bluetooth_loader.te
++++ b/legacy-common/bluetooth_loader.te
+@@ -1,4 +1,5 @@
+ type bluetooth_loader, domain;
++typeattribute bluetooth_loader data_between_core_and_vendor_violators;
+ type bluetooth_loader_exec, exec_type, file_type;
+ 
+ # Started by init
+@@ -12,7 +13,7 @@
+ allow bluetooth_loader vendor_toolbox_exec:file execute_no_trans;
+ 
+ # Set persist.service.bdroid.*, bluetooth.* and get wcnss property values
+-set_prop(bluetooth_loader, bluetooth_prop)
++set_prop(bluetooth_loader, qcom_bluetooth_prop)
+ get_prop(bluetooth_loader, vendor_wifi_prop)
+ 
+ # Access the serial device
+diff --git a/legacy-common/fm_app.te b/legacy-common/fm_app.te
+--- a/legacy-common/fm_app.te
++++ b/legacy-common/fm_app.te
+@@ -3,7 +3,7 @@
+ allow vendor_fm_app init:unix_stream_socket connectto;
+ allow vendor_fm_app property_socket:sock_file write;
+ 
+-get_prop(vendor_fm_app, bluetooth_prop)
++get_prop(vendor_fm_app, qcom_bluetooth_prop)
+ 
+ get_prop(vendor_fm_app, fm_prop)
+ set_prop(vendor_fm_app, fm_prop)
+diff --git a/legacy-common/location_app.te b/legacy-common/location_app.te
+--- a/legacy-common/location_app.te
++++ b/legacy-common/location_app.te
+@@ -1,2 +1,2 @@
+ # Allow binder communication
+-allow location_app { app_api_service system_api_service }:service_manager find;
++allow location_app app_api_service:service_manager find;
+diff --git a/legacy-common/mm-pp-daemon.te b/legacy-common/mm-pp-daemon.te
+--- a/legacy-common/mm-pp-daemon.te
++++ b/legacy-common/mm-pp-daemon.te
+@@ -7,7 +7,7 @@
+     power_service
+ }:service_manager find;
+ 
+-allow mm-pp-daemon { shell_exec zygote_exec }:file rx_file_perms;
++allow mm-pp-daemon shell_exec:file rx_file_perms;
+ 
+ allow mm-pp-daemon system_server:unix_stream_socket rw_socket_perms;
+ 
+diff --git a/legacy-common/mm-qcamerad.te b/legacy-common/mm-qcamerad.te
+--- a/legacy-common/mm-qcamerad.te
++++ b/legacy-common/mm-qcamerad.te
+@@ -1,18 +1,13 @@
+ binder_use(mm-qcamerad)
+ 
+ # /data/cam_socket*
+-type_transition mm-qcamerad system_data_root_file:sock_file camera_socket "cam_socket0";
+-type_transition mm-qcamerad system_data_root_file:sock_file camera_socket "cam_socket1";
+-type_transition mm-qcamerad system_data_root_file:sock_file camera_socket "cam_socket2";
+ allow mm-qcamerad camera_socket:sock_file { create unlink write };
+ allow mm-qcamerad camera_data_file:sock_file { create unlink };
+-allow mm-qcamerad system_data_root_file:dir w_dir_perms;
+ 
+ allow mm-qcamerad system_server:unix_stream_socket rw_socket_perms;
+ allow mm-qcamerad sensorservice_service:service_manager find;
+ 
+ # /data/fdAlbum
+-type_transition mm-qcamerad system_data_root_file:file camera_data_file "fdAlbum";
+ allow mm-qcamerad camera_data_file:file create_file_perms;
+ 
+ r_dir_file(mm-qcamerad, sysfs_graphics)
+diff --git a/legacy-common/perfd.te b/legacy-common/perfd.te
+--- a/legacy-common/perfd.te
++++ b/legacy-common/perfd.te
+@@ -1,4 +1,5 @@
+ type perfd, domain;
++typeattribute perfd socket_between_core_and_vendor_violators;
+ type perfd_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(perfd)
+diff --git a/legacy-common/property.te b/legacy-common/property.te
+--- a/legacy-common/property.te
++++ b/legacy-common/property.te
+@@ -1 +1 @@
+-type postprocessing_prop, property_type;
++system_public_prop(postprocessing_prop)
+diff --git a/legacy-common/system_server.te b/legacy-common/system_server.te
+--- a/legacy-common/system_server.te
++++ b/legacy-common/system_server.te
+@@ -7,7 +7,9 @@
+ 
+ netmgr_socket(system_server)
+ qmux_socket(system_server)
+-use_per_mgr(system_server)
++binder_use(system_server)
++binder_call(system_server, per_mgr)
++binder_call(per_mgr, system_server)
+ allow system_server binder_per_mgr_service:service_manager find;
+ 
+ allow system_server sensors:unix_stream_socket sendto;
+diff --git a/private/file_contexts b/private/file_contexts
+--- a/private/file_contexts
++++ b/private/file_contexts
+@@ -39,16 +39,16 @@
+ /dev/socket/qvrservice                          u:object_r:qvrd_socket:s0
+ 
+ ####### system file ###############
+-/system/bin/seempd                              u:object_r:seempd_exec:s0
++/(vendor|system/vendor)/bin/seempd                              u:object_r:seempd_exec:s0
+ /system/bin/dpmd                                u:object_r:dpmd_exec:s0
+ /system/bin/dun-server                          u:object_r:dun-server_exec:s0
+ /system/bin/bt_logger                           u:object_r:bt_logger_exec:s0
+ /system/etc/init\.qcom\.testscripts\.sh         u:object_r:qti-testscripts_exec:s0
+ /system/bin/smcinvoked                          u:object_r:smcinvoke_daemon_exec:s0
+ /system/bin/qvrservice                          u:object_r:qvrd_exec:s0
+-/system/bin/wfdservice                          u:object_r:wfdservice_exec:s0
+-/system/bin/mmi                                 u:object_r:mmi_sys_exec:s0
+-/system/bin/mmi_diag                            u:object_r:mmi_sys_exec:s0
++/(vendor|system/vendor)/bin/wfdservice                          u:object_r:wfdservice_exec:s0
++/(vendor|system/vendor)/bin/mmi                                 u:object_r:mmi_sys_exec:s0
++/(vendor|system/vendor)/bin/mmi_diag                            u:object_r:mmi_sys_exec:s0
+ 
+ ####### data files ################
+ /data/misc/seemp(/.*)?                          u:object_r:seemp_data_file:s0
+diff --git a/private/property_contexts b/private/property_contexts
+--- a/private/property_contexts
++++ b/private/property_contexts
+@@ -24,7 +24,3 @@
+ # WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ # OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ # IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-
+-persist.vendor.dpm.        u:object_r:vendor_persist_dpm_prop:s0
+-vendor.bluetooth.          u:object_r:bluetooth_prop:s0
+-vendor.qcom.bluetooth.     u:object_r:bluetooth_prop:s0

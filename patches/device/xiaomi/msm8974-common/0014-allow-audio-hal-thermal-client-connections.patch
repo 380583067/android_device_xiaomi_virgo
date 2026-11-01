@@ -1,0 +1,7 @@
+diff --git a/sepolicy/hal_audio_default.te b/sepolicy/hal_audio_default.te
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/hal_audio_default.te
+@@ -0,0 +1,2 @@
++# The Qualcomm audio HAL registers thermal clients for speaker protection.
++unix_socket_connect(hal_audio_default, thermal, thermal-engine)

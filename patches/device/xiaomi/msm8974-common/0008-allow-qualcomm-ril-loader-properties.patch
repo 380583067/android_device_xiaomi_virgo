@@ -1,0 +1,27 @@
+diff --git a/sepolicy/rild.te b/sepolicy/rild.te
+--- a/sepolicy/rild.te
++++ b/sepolicy/rild.te
+@@ -1,2 +1,7 @@
+ #============= rild ==============
+ allow rild zygote_exec:file execute;
++# rild must read the configured Qualcomm library instead of idling without one.
++get_prop(rild, vendor_rild_libpath_prop)
++# Qualcomm's framework radio client uses the OEM-hook socket hosted by rild.
++allow radio rild:unix_stream_socket connectto;
++get_prop(radio, vendor_legacy_radio_prop)
+diff --git a/sepolicy/property_contexts b/sepolicy/property_contexts
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/property_contexts
+@@ -0,0 +1,3 @@
++# Both properties configure the same legacy Qualcomm RIL loader.
++vendor.rild.libargs u:object_r:vendor_rild_libpath_prop:s0 exact string
++ro.vendor.radio.legacy_hidl u:object_r:vendor_legacy_radio_prop:s0 exact bool
+diff --git a/sepolicy/property.te b/sepolicy/property.te
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/property.te
+@@ -0,0 +1,3 @@
++# Readable by the framework radio process, writable only on the vendor side.
++vendor_restricted_prop(vendor_legacy_radio_prop)
++set_prop(vendor_init, vendor_legacy_radio_prop)

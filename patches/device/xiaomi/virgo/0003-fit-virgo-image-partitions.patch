@@ -1,0 +1,26 @@
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+index 0000000..0000000 100644
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -28,6 +28,21 @@
+ # Display
+ TARGET_SCREEN_DENSITY := 440
+ 
++# The stock virgo rawprogram layout reserves exactly 32768 sectors (16 MiB)
++# for recovery. Keep the build guard at that physical partition size so the
++# generated image can never silently overwrite the neighboring partition.
++BOARD_RECOVERYIMAGE_PARTITION_SIZE := 16777216
++
++# The planned virgo GPT layout allocates 3072 MiB (3 GiB) to system. Keep the
++# Android image-size limit aligned with that repartitioned layout so the full
++# Android 14 product set fits without dropping device or framework features.
++BOARD_SYSTEMIMAGE_PARTITION_SIZE := 3221225472
++
++# Recovery uses its own resource density; this does not change Android's
++# 440-dpi display setting. The hdpi recovery assets keep the full recovery UI
++# while reducing its PNG payload enough for virgo's fixed 16-MiB partition.
++TARGET_RECOVERY_DENSITY := hdpi
++
+ # Dual sim solution in virgo
+ CONFIG_EAP_PROXY_DUAL_SIM := true
+ 

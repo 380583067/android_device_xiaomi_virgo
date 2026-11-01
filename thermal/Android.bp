@@ -1,0 +1,18 @@
+cc_library_shared {
+    name: "thermal.msm8974",
+    vendor: true,
+    relative_install_path: "hw",
+    srcs: ["thermal.cpp"],
+    header_libs: ["libhardware_headers"],
+    cflags: ["-Wall", "-Wextra", "-Werror"],
+}
+
+cc_binary {
+    name: "virgo_thermal_probe",
+    vendor: true,
+    srcs: ["thermal_probe.cpp"],
+    header_libs: ["libhardware_headers"],
+    shared_libs: ["libdl"],
+    cflags: ["-Wall", "-Wextra", "-Werror"],
+    installable: false,
+}

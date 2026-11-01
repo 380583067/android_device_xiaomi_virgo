@@ -1,0 +1,15 @@
+diff --git a/src/com/android/settings/SettingsPreferenceFragment.java b/src/com/android/settings/SettingsPreferenceFragment.java
+index 66397c0..32631c6 100644
+--- a/src/com/android/settings/SettingsPreferenceFragment.java
++++ b/src/com/android/settings/SettingsPreferenceFragment.java
+@@ -693,7 +693,9 @@ public abstract class SettingsPreferenceFragment extends InstrumentedPreferenceF
+     }
+ 
+     protected boolean hasNextButton() {
+-        return ((ButtonBarHandler) getActivity()).hasNextButton();
++        Activity activity = getActivity();
++        return activity instanceof ButtonBarHandler
++                && ((ButtonBarHandler) activity).hasNextButton();
+     }
+ 
+     protected Button getNextButton() {

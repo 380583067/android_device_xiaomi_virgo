@@ -1,0 +1,304 @@
+diff --git a/libprocessgroup/processgroup.cpp b/libprocessgroup/processgroup.cpp
+--- a/libprocessgroup/processgroup.cpp
++++ b/libprocessgroup/processgroup.cpp
+@@ -78,6 +78,14 @@
+     return true;
+ }
+ 
++// Pre-cgroup-v2 kernels can still track and clean up process trees with the
++// cpuacct v1 hierarchy. A descriptor alone does not mean a controller mounted.
++static CgroupController GetProcessGroupController() {
++    auto controller = CgroupMap::GetInstance().FindController(CGROUPV2_HIERARCHY_NAME);
++    if (controller.IsUsable()) return controller;
++    return CgroupMap::GetInstance().FindController("cpuacct");
++}
++
+ static std::string ConvertUidToPath(const char* cgroup, uid_t uid) {
+     return StringPrintf("%s/uid_%u", cgroup, uid);
+ }
+@@ -286,7 +294,9 @@
+     std::vector<std::string> cgroups;
+     std::string path, memcg_apps_path;
+ 
+-    if (CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &path)) {
++    auto controller = GetProcessGroupController();
++    if (controller.IsUsable()) {
++        path = controller.path();
+         cgroups.push_back(path);
+     }
+     if (CgroupGetMemcgAppsPath(&memcg_apps_path) && memcg_apps_path != path) {
+@@ -374,12 +384,13 @@
+ bool sendSignalToProcessGroup(uid_t uid, pid_t initialPid, int signal) {
+     std::set<pid_t> pgids, pids;
+ 
+-    if (CgroupsAvailable()) {
++    auto controller = GetProcessGroupController();
++    if (CgroupsAvailable() && controller.IsUsable()) {
+         std::string hierarchy_root_path, cgroup_v2_path;
+-        CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &hierarchy_root_path);
++        hierarchy_root_path = controller.path();
+         cgroup_v2_path = ConvertUidPidToPath(hierarchy_root_path.c_str(), uid, initialPid);
+ 
+-        if (signal == SIGKILL && CgroupKillAvailable()) {
++        if (controller.version() == 2 && signal == SIGKILL && CgroupKillAvailable()) {
+             LOG(VERBOSE) << "Using " << PROCESSGROUP_CGROUP_KILL_FILE << " to SIGKILL "
+                          << cgroup_v2_path;
+ 
+@@ -486,6 +497,19 @@
+     error
+ };
+ 
++static populated_status cgroupV1IsPopulated(const std::string& procs_path) {
++    // Older v1 kernels snapshot the PID list on open. Reopen on every check
++    // rather than repeatedly reading a stale snapshot while tasks exit.
++    std::string procs;
++    if (!android::base::ReadFileToString(procs_path, &procs)) {
++        if (errno == ENOENT) return populated_status::not_populated;
++        PLOG(ERROR) << "Could not read " << procs_path;
++        return populated_status::error;
++    }
++    return procs.find_first_not_of(" \t\r\n") == std::string::npos
++            ? populated_status::not_populated : populated_status::populated;
++}
++
+ static populated_status cgroupIsPopulated(int events_fd) {
+     const std::string POPULATED_KEY("populated ");
+     const std::string::size_type MAX_EVENTS_FILE_SIZE = 32;
+@@ -538,15 +562,19 @@
+ 
+     if (!CgroupsAvailable() || !signal_ret) return signal_ret ? 0 : -1;
+ 
+-    std::string hierarchy_root_path;
+-    CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &hierarchy_root_path);
++    auto controller = GetProcessGroupController();
++    if (!controller.IsUsable()) return 0;
++    const bool cgroup_v2 = controller.version() == 2;
++    const std::string hierarchy_root_path = controller.path();
+ 
+     const std::string cgroup_v2_path =
+             ConvertUidPidToPath(hierarchy_root_path.c_str(), uid, initialPid);
+ 
+-    const std::string eventsfile = cgroup_v2_path + '/' + PROCESSGROUP_CGROUP_EVENTS_FILE;
+-    android::base::unique_fd events_fd(open(eventsfile.c_str(), O_RDONLY));
+-    if (events_fd.get() == -1) {
++    const std::string eventsfile = cgroup_v2_path + '/' +
++            (cgroup_v2 ? PROCESSGROUP_CGROUP_EVENTS_FILE : PROCESSGROUP_CGROUP_PROCS_FILE);
++    android::base::unique_fd events_fd;
++    if (cgroup_v2) events_fd.reset(open(eventsfile.c_str(), O_RDONLY));
++    if (cgroup_v2 && events_fd.get() == -1) {
+         PLOG(WARNING) << "Error opening " << eventsfile << " for KillProcessGroup";
+         return -1;
+     }
+@@ -557,6 +585,9 @@
+     };
+ 
+     const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
++    const auto readPopulated = [&]() {
++        return cgroup_v2 ? cgroupIsPopulated(events_fd.get()) : cgroupV1IsPopulated(eventsfile);
++    };
+ 
+     // The primary reason to loop here is to capture any new forks or migrations that could occur
+     // after we send signals to the original set of processes, but before all of those processes
+@@ -568,17 +599,25 @@
+     int ret;
+     do {
+         populated_status populated;
+-        while ((populated = cgroupIsPopulated(events_fd.get())) == populated_status::populated &&
++        while ((populated = readPopulated()) == populated_status::populated &&
+                std::chrono::steady_clock::now() < until) {
+ 
+             sendSignalToProcessGroup(uid, initialPid, signal);
+             if (once) {
+-                populated = cgroupIsPopulated(events_fd.get());
++                populated = readPopulated();
+                 break;
+             }
+ 
+             const std::chrono::steady_clock::time_point poll_start =
+                     std::chrono::steady_clock::now();
++
++            // v1 cgroup.procs does not provide the populated-change poll event.
++            if (!cgroup_v2) {
++                if (poll_start < until) {
++                    std::this_thread::sleep_for(std::min(5ms, toMillisec(until - poll_start)));
++                }
++                continue;
++            }
+ 
+             if (poll_start < until)
+                 ret = TEMP_FAILURE_RETRY(poll(&fds, 1, toMillisec(until - poll_start).count()));
+@@ -708,9 +747,9 @@
+         }
+     }
+ 
+-    std::string cgroup;
+-    CgroupGetControllerPath(CGROUPV2_HIERARCHY_NAME, &cgroup);
+-    return createProcessGroupInternal(uid, initialPid, cgroup, true);
++    auto controller = GetProcessGroupController();
++    if (!controller.IsUsable()) return -ENODEV;
++    return createProcessGroupInternal(uid, initialPid, controller.path(), controller.version() == 2);
+ }
+ 
+ static bool SetProcessGroupValue(pid_t tid, const std::string& attr_name, int64_t value) {
+diff --git a/libprocessgroup/Android.bp b/libprocessgroup/Android.bp
+--- a/libprocessgroup/Android.bp
++++ b/libprocessgroup/Android.bp
+@@ -82,6 +82,15 @@
+ }
+ 
+ cc_test {
++    name: "processgroup_legacy_test",
++    defaults: ["libprocessgroup_defaults"],
++    srcs: ["processgroup_legacy_test.cpp"],
++    shared_libs: ["libbase", "libprocessgroup"],
++    require_root: true,
++    test_suites: ["device-tests"],
++}
++
++cc_test {
+     name: "task_profiles_test",
+     host_supported: true,
+     defaults: ["libprocessgroup_defaults"],
+diff --git a/libprocessgroup/processgroup_legacy_test.cpp b/libprocessgroup/processgroup_legacy_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/libprocessgroup/processgroup_legacy_test.cpp
+@@ -0,0 +1,138 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++#include <errno.h>
++#include <poll.h>
++#include <signal.h>
++#include <sys/prctl.h>
++#include <sys/wait.h>
++#include <unistd.h>
++
++#include <chrono>
++#include <set>
++#include <sstream>
++#include <string>
++
++#include <android-base/file.h>
++#include <android-base/unique_fd.h>
++#include <gtest/gtest.h>
++#include <processgroup/processgroup.h>
++
++namespace {
++
++struct Children {
++    pid_t leader = -1;
++    pid_t escaped = -1;
++    ~Children() {
++        for (pid_t pid : {leader, escaped}) {
++            if (pid > 0) {
++                kill(pid, SIGKILL);
++                TEMP_FAILURE_RETRY(waitpid(pid, nullptr, 0));
++            }
++        }
++    }
++};
++
++void CheckLegacyCleanup(bool once) {
++    if (access("/sys/fs/cgroup/cgroup.controllers", F_OK) == 0) {
++        GTEST_SKIP() << "This regression exercises the legacy v1 fallback";
++    }
++    std::string root;
++    ASSERT_TRUE(CgroupGetControllerPath("cpuacct", &root));
++    ASSERT_EQ(0, access((root + "/cgroup.procs").c_str(), F_OK));
++    ASSERT_EQ(0, prctl(PR_SET_CHILD_SUBREAPER, 1));
++
++    int start_pipe[2], ready_pipe[2];
++    ASSERT_EQ(0, pipe(start_pipe));
++    android::base::unique_fd start_read(start_pipe[0]), start_write(start_pipe[1]);
++    ASSERT_EQ(0, pipe(ready_pipe));
++    android::base::unique_fd ready_read(ready_pipe[0]), ready_write(ready_pipe[1]);
++
++    Children children;
++    children.leader = fork();
++    ASSERT_GE(children.leader, 0);
++    if (children.leader == 0) {
++        alarm(10);  // Bound the lifetime even if a parent assertion fails.
++        if (setpgid(0, 0) != 0) _exit(1);
++        char start;
++        if (!android::base::ReadFully(start_read.get(), &start, 1)) _exit(2);
++        const pid_t descendant = fork();
++        if (descendant < 0) _exit(3);
++        if (descendant == 0) {
++            alarm(10);
++            // Escape the leader's POSIX process group. Only cgroup membership
++            // can find this descendant when the complete tree is terminated.
++            if (setsid() < 0) _exit(4);
++            const pid_t self = getpid();
++            if (!android::base::WriteFully(ready_write.get(), &self, sizeof(self))) _exit(5);
++        }
++        while (true) pause();
++    }
++
++    ASSERT_EQ(0, createProcessGroup(getuid(), children.leader));
++    ASSERT_TRUE(android::base::WriteFully(start_write.get(), "x", 1));
++    pollfd ready{ready_read.get(), POLLIN, 0};
++    ASSERT_EQ(1, TEMP_FAILURE_RETRY(poll(&ready, 1, 3000)));
++    ASSERT_TRUE(android::base::ReadFully(ready_read.get(), &children.escaped,
++                                        sizeof(children.escaped)));
++    ASSERT_GT(children.escaped, 0);
++    ASSERT_EQ(children.escaped, getpgid(children.escaped));
++
++    const std::string group = root + "/uid_" + std::to_string(getuid()) + "/pid_" +
++            std::to_string(children.leader);
++    std::string procs;
++    ASSERT_TRUE(android::base::ReadFileToString(group + "/cgroup.procs", &procs));
++    std::istringstream stream(procs);
++    std::set<pid_t> members;
++    for (pid_t pid; stream >> pid;) members.insert(pid);
++    EXPECT_EQ((std::set<pid_t>{children.leader, children.escaped}), members);
++
++    const auto start = std::chrono::steady_clock::now();
++    const int result = once ? killProcessGroupOnce(getuid(), children.leader, SIGKILL)
++                            : killProcessGroup(getuid(), children.leader, SIGKILL);
++    if (once) {
++        EXPECT_TRUE(result == 0 || (result == -1 && errno == EBUSY));
++        EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
++    } else {
++        EXPECT_EQ(0, result);
++        EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
++    }
++
++    for (pid_t pid : {children.leader, children.escaped}) {
++        int status = 0;
++        ASSERT_EQ(pid, TEMP_FAILURE_RETRY(waitpid(pid, &status, 0)));
++        ASSERT_TRUE(WIFSIGNALED(status));
++        EXPECT_EQ(SIGKILL, WTERMSIG(status));
++    }
++    const pid_t leader = children.leader;
++    children.leader = children.escaped = -1;
++    if (once && result != 0) {
++        // The one-pass API may return before the tasks have exited.
++        ASSERT_EQ(0, killProcessGroup(getuid(), leader, SIGKILL));
++    }
++    EXPECT_EQ(-1, access(group.c_str(), F_OK));
++    EXPECT_EQ(ENOENT, errno);
++}
++
++TEST(ProcessgroupLegacy, KillsEscapedDescendantAndRemovesGroup) {
++    CheckLegacyCleanup(false);
++}
++
++TEST(ProcessgroupLegacy, OnePassKillsEscapedDescendant) {
++    CheckLegacyCleanup(true);
++}
++
++}  // namespace

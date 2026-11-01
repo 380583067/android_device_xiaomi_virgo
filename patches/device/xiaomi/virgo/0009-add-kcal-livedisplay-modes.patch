@@ -1,0 +1,193 @@
+diff --git a/virgo.mk b/virgo.mk
+--- a/virgo.mk
++++ b/virgo.mk
+@@ -63,3 +63,6 @@
+ # Start and stop the in-kernel WCNSS FM SMD transport with the JNI lifecycle.
+ PRODUCT_COPY_FILES += \
+     $(DEVICE_PATH)/rootdir/etc/init.virgo.fm.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.virgo.fm.rc
++
++# Expose KCAL saturation presets through the LiveDisplay color-profile UI.
++PRODUCT_PACKAGES += vendor.lineage.livedisplay@2.0-service.virgo
+diff --git a/BoardConfig.mk b/BoardConfig.mk
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -80,3 +80,6 @@
+ BOARD_HAVE_QCOM_FM := true
+ # WCNSS integrates FM firmware; there is no external patch downloader.
+ TARGET_QCOM_NO_FM_FIRMWARE := true
++
++# Virgo KCAL display-mode service.
++BOARD_VENDOR_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy
+diff --git a/compatibility_matrix_product.xml b/compatibility_matrix_product.xml
+--- a/compatibility_matrix_product.xml
++++ b/compatibility_matrix_product.xml
+@@ -43,4 +43,12 @@
+             <instance>default</instance>
+         </interface>
+     </hal>
++    <hal format="hidl" optional="false">
++        <name>vendor.lineage.livedisplay</name>
++        <version>2.0</version>
++        <interface>
++            <name>IDisplayModes</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
+ </compatibility-matrix>
+diff --git a/livedisplay/Android.bp b/livedisplay/Android.bp
+new file mode 100644
+--- /dev/null
++++ b/livedisplay/Android.bp
+@@ -0,0 +1,11 @@
++// SPDX-License-Identifier: Apache-2.0
++cc_binary {
++    name: "vendor.lineage.livedisplay@2.0-service.virgo",
++    defaults: ["hidl_defaults"],
++    vendor: true,
++    relative_install_path: "hw",
++    srcs: ["service.cpp"],
++    shared_libs: ["libbase", "libhidlbase", "libutils", "vendor.lineage.livedisplay@2.0"],
++    init_rc: ["vendor.lineage.livedisplay@2.0-service.virgo.rc"],
++    vintf_fragments: ["vendor.lineage.livedisplay@2.0-service.virgo.xml"],
++}
+diff --git a/livedisplay/service.cpp b/livedisplay/service.cpp
+new file mode 100644
+--- /dev/null
++++ b/livedisplay/service.cpp
+@@ -0,0 +1,78 @@
++// SPDX-License-Identifier: Apache-2.0
++// Copyright (C) 2026 The LineageOS Project
++#include <android-base/file.h>
++#include <android-base/logging.h>
++#include <android-base/parseint.h>
++#include <android-base/strings.h>
++#include <hidl/HidlTransportSupport.h>
++#include <vendor/lineage/livedisplay/2.0/IDisplayModes.h>
++
++using android::hardware::Return;
++using android::hardware::Void;
++using vendor::lineage::livedisplay::V2_0::DisplayMode;
++using vendor::lineage::livedisplay::V2_0::IDisplayModes;
++
++namespace {
++constexpr const char* kSaturation = "/sys/devices/platform/kcal_ctrl.0/kcal_sat";
++constexpr const char* kDefault = "/data/vendor/virgo-display/default-mode";
++// KCAL presets, not factory-calibrated sRGB/DCI-P3 profiles. RGB calibration
++// remains under LiveDisplay's existing color-temperature controller.
++constexpr int kValues[] = {255, 280, 128};
++const char* const kNames[] = {"Natural", "Vivid", "Monochrome"};
++bool valid(int id) { return id >= 0 && id < 3; }
++DisplayMode mode(int id) { return {id, kNames[id]}; }
++int defaultId() {
++    std::string text;
++    int id = 0;
++    if (!android::base::ReadFileToString(kDefault, &text) ||
++            !android::base::ParseInt(android::base::Trim(text), &id) || !valid(id)) return 0;
++    return id;
++}
++class DisplayModes final : public IDisplayModes {
++ public:
++    bool restore() {
++        return android::base::WriteStringToFile(std::to_string(kValues[defaultId()]), kSaturation);
++    }
++    Return<void> getDisplayModes(getDisplayModes_cb cb) override {
++        cb({mode(0), mode(1), mode(2)});
++        return Void();
++    }
++    Return<void> getCurrentDisplayMode(getCurrentDisplayMode_cb cb) override {
++        std::string text;
++        int value = 0;
++        if (android::base::ReadFileToString(kSaturation, &text) &&
++                android::base::ParseInt(android::base::Trim(text), &value)) {
++            for (int id = 0; id < 3; ++id) {
++                if (value == kValues[id]) { cb(mode(id)); return Void(); }
++            }
++        }
++        cb(DisplayMode{-1, ""});
++        return Void();
++    }
++    Return<void> getDefaultDisplayMode(getDefaultDisplayMode_cb cb) override {
++        cb(mode(defaultId()));
++        return Void();
++    }
++    Return<bool> setDisplayMode(int32_t id, bool makeDefault) override {
++        if (!valid(id)) return false;
++        std::string previous;
++        if (!android::base::ReadFileToString(kSaturation, &previous) ||
++                !android::base::WriteStringToFile(std::to_string(kValues[id]), kSaturation)) return false;
++        if (makeDefault && !android::base::WriteStringToFile(std::to_string(id), kDefault)) {
++            android::base::WriteStringToFile(previous, kSaturation);
++            return false;
++        }
++        return true;
++    }
++};
++}  // namespace
++int main() {
++    android::hardware::configureRpcThreadpool(1, true);
++    android::sp<DisplayModes> service = new DisplayModes();
++    if (!service->restore() || service->registerAsService() != android::OK) {
++        LOG(ERROR) << "Unable to initialize Virgo KCAL display modes";
++        return 1;
++    }
++    android::hardware::joinRpcThreadpool();
++    return 1;
++}
+diff --git a/livedisplay/vendor.lineage.livedisplay@2.0-service.virgo.rc b/livedisplay/vendor.lineage.livedisplay@2.0-service.virgo.rc
+new file mode 100644
+--- /dev/null
++++ b/livedisplay/vendor.lineage.livedisplay@2.0-service.virgo.rc
+@@ -0,0 +1,10 @@
++on post-fs-data
++    mkdir /data/vendor/virgo-display 0770 system system
++    restorecon_recursive /data/vendor/virgo-display
++    chown system system /sys/devices/platform/kcal_ctrl.0/kcal_sat
++    chmod 0660 /sys/devices/platform/kcal_ctrl.0/kcal_sat
++
++service vendor.livedisplay-virgo /vendor/bin/hw/vendor.lineage.livedisplay@2.0-service.virgo
++    class hal
++    user system
++    group system
+diff --git a/livedisplay/vendor.lineage.livedisplay@2.0-service.virgo.xml b/livedisplay/vendor.lineage.livedisplay@2.0-service.virgo.xml
+new file mode 100644
+--- /dev/null
++++ b/livedisplay/vendor.lineage.livedisplay@2.0-service.virgo.xml
+@@ -0,0 +1,11 @@
++<manifest version="1.0" type="device">
++    <hal format="hidl">
++        <name>vendor.lineage.livedisplay</name>
++        <transport>hwbinder</transport>
++        <version>2.0</version>
++        <interface>
++            <name>IDisplayModes</name>
++            <instance>default</instance>
++        </interface>
++    </hal>
++</manifest>
+diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/file_contexts
+@@ -0,0 +1,2 @@
++/(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay@2\.0-service\.virgo u:object_r:hal_lineage_livedisplay_sysfs_exec:s0
++/data/vendor/virgo-display(/.*)? u:object_r:virgo_display_vendor_data_file:s0
+diff --git a/sepolicy/genfs_contexts b/sepolicy/genfs_contexts
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/genfs_contexts
+@@ -0,0 +1 @@
++genfscon sysfs /devices/platform/kcal_ctrl.0/kcal_sat u:object_r:sysfs_livedisplay_tuneable:s0
+diff --git a/sepolicy/livedisplay.te b/sepolicy/livedisplay.te
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/livedisplay.te
+@@ -0,0 +1,3 @@
++type virgo_display_vendor_data_file, file_type, data_file_type;
++allow hal_lineage_livedisplay_sysfs virgo_display_vendor_data_file:dir rw_dir_perms;
++allow hal_lineage_livedisplay_sysfs virgo_display_vendor_data_file:file create_file_perms;
+diff --git a/sepolicy/property_contexts b/sepolicy/property_contexts
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/property_contexts
+@@ -0,0 +1 @@
++ro.camera.legacy_torch u:object_r:exported_default_prop:s0 exact bool

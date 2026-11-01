@@ -1,0 +1,38 @@
+--- a/server/BandwidthController.cpp
++++ b/server/BandwidthController.cpp
+@@ -44,6 +44,7 @@
+ #include <linux/pkt_sched.h>
+ 
+ #include "android-base/stringprintf.h"
++#include "android-base/properties.h"
+ #include "android-base/strings.h"
+ #define LOG_TAG "BandwidthController"
+ #include <cutils/properties.h>
+@@ -203,6 +204,27 @@
+  */
+ 
+ std::vector<std::string> getBasicAccountingCommands() {
++    // xt_qtaguid accounts packets as a side effect of the owner match. Legacy
++    // kernels cannot load the pinned BPF programs used by the modern rules.
++    if (!android::base::GetBoolProperty("ro.kernel.ebpf.supported", true)) {
++        return {
++                "*filter",
++                "-A bw_INPUT -j bw_global_alert",
++                "-A bw_INPUT -m owner --socket-exists",
++                "-A bw_OUTPUT -j bw_global_alert",
++                "-A bw_OUTPUT -m owner --socket-exists",
++                "-A bw_costly_shared -j bw_penalty_box",
++                "-A bw_penalty_box -j bw_happy_box",
++                "-A bw_happy_box -j bw_data_saver",
++                "-A bw_data_saver -j RETURN",
++                "COMMIT",
++                "*raw",
++                "-A bw_raw_PREROUTING -m owner --socket-exists",
++                "COMMIT",
++                "*mangle",
++                "-A bw_mangle_POSTROUTING -m owner --socket-exists",
++                COMMIT_AND_CLOSE};
++    }
+     // clang-format off
+     std::vector<std::string> ipt_basic_accounting_commands = {
+             "*filter",

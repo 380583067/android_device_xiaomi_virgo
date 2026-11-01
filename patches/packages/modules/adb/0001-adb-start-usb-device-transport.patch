@@ -1,0 +1,29 @@
+diff --git a/transport.cpp b/transport.cpp
+index 244c2539..740be80f 100644
+--- a/transport.cpp
++++ b/transport.cpp
+@@ -751,19 +751,18 @@ static void fdevent_register_transport(atransport* t) {
+     if (t->GetConnectionState() != kCsNoPerm) {
+         t->connection()->SetTransport(t);
+ 
+-        if (t->type == kTransportUsb
+ #if ADB_HOST
+-            && usb_devices_start_detached()  // -d setting propagated from the
+-                                             // host device, hence n/a on-device.
+-#endif
+-        ) {
++        // Starting detached is a host-side option. The device must start its
++        // USB read/write threads immediately to receive the host's CNXN packet.
++        if (t->type == kTransportUsb && usb_devices_start_detached()) {
+             t->SetConnectionState(kCsDetached);
+         } else {
++#endif
+             t->connection()->Start();
+ #if ADB_HOST
+             send_connect(t);
+-#endif
+         }
++#endif
+     }
+ 
+     {

@@ -1,0 +1,113 @@
+diff --git a/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp b/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
+--- a/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
++++ b/graphics/composer/2.1/utils/hwc2on1adapter/HWC2On1Adapter.cpp
+@@ -345,6 +345,9 @@
+     mHwc1VirtualDisplay.reset();
+     mHwc1DisplayMap.erase(HWC_DISPLAY_VIRTUAL);
+     mDisplays.erase(displayId);
++    if (mHwc1Contents.size() > HWC_DISPLAY_VIRTUAL) {
++        mHwc1Contents[HWC_DISPLAY_VIRTUAL] = nullptr;
++    }
+ 
+     return Error::None;
+ }
+@@ -796,7 +799,10 @@
+         }
+     }
+ 
+-    *outRetireFence = mRetireFence.get()->dup();
++    // A virtual display fence marks completion of this writeback buffer, not
++    // replacement of a panel frame. The encoder must wait for the current copy.
++    *outRetireFence = (mType == HWC2::DisplayType::Virtual
++            ? mRetireFence.getCurrent() : mRetireFence.get())->dup();
+     ALOGV("[%" PRIu64 "] present returning retire fence %d", mId,
+             *outRetireFence);
+ 
+@@ -977,7 +983,7 @@
+             return Error::BadDisplay;
+         }
+     } else {
+-        ALOGE("Validate was called more than once!");
++        ALOGV("Using pending validation from another display");
+     }
+ 
+     *outNumTypes = mChanges->getNumTypes();
+@@ -1269,12 +1275,23 @@
+     return mChanges != nullptr;
+ }
+ 
+-Error HWC2On1Adapter::Display::set(hwc_display_contents_1& hwcContents) {
++Error HWC2On1Adapter::Display::set(hwc_display_contents_1& hwcContents, bool validateOnly) {
+     std::unique_lock<std::recursive_mutex> lock(mStateMutex);
+ 
+     if (!mChanges || (mChanges->getNumTypes() > 0)) {
+         ALOGE("[%" PRIu64 "] set failed: not validated", mId);
+         return Error::NotValidated;
++    }
++    if (validateOnly) {
++        return Error::None;
++    }
++
++    // setOutputBuffer supplies its acquire fence after prepare, once the
++    // render surface has finished drawing. Refresh both fields before set.
++    if (mType == HWC2::DisplayType::Virtual) {
++        close(hwcContents.outbufAcquireFenceFd);
++        hwcContents.outbuf = mOutputBuffer.getBuffer();
++        hwcContents.outbufAcquireFenceFd = mOutputBuffer.getFence();
+     }
+ 
+     // Set up the client/framebuffer target
+@@ -2349,6 +2366,9 @@
+ 
+     // Push the hardware virtual display, if supported and present
+     if (mHwc1MinorVersion >= 3) {
++        // Legacy vendor headers may reserve more than two physical display slots.
++        // The array index must match the HWC1 ID used in mHwc1DisplayMap.
++        mHwc1Contents.resize(HWC_DISPLAY_VIRTUAL, nullptr);
+         if (mHwc1DisplayMap.count(HWC_DISPLAY_VIRTUAL) != 0) {
+             auto virtualDisplayId = mHwc1DisplayMap[HWC_DISPLAY_VIRTUAL];
+             auto& virtualDisplay = mDisplays[virtualDisplayId];
+@@ -2484,6 +2504,20 @@
+ 
+     std::unique_lock<std::recursive_timed_mutex> lock(mStateMutex);
+ 
++    // Validate the entire batch before consuming any display's changes. A later
++    // display can still be awaiting acceptChanges(); clearing an earlier display
++    // here would prevent every subsequent present from reaching HWC1 set().
++    for (size_t hwc1Id = 0; hwc1Id < mHwc1Contents.size(); ++hwc1Id) {
++        if (mHwc1Contents[hwc1Id] == nullptr) {
++            continue;
++        }
++        auto displayId = mHwc1DisplayMap[hwc1Id];
++        Error error = mDisplays[displayId]->set(*mHwc1Contents[hwc1Id], true);
++        if (error != Error::None) {
++            return error;
++        }
++    }
++
+     // Make sure we're ready to validate
+     for (size_t hwc1Id = 0; hwc1Id < mHwc1Contents.size(); ++hwc1Id) {
+         if (mHwc1Contents[hwc1Id] == nullptr) {
+diff --git a/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h b/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h
+--- a/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h
++++ b/graphics/composer/2.1/utils/hwc2on1adapter/include/hwc2on1adapter/HWC2On1Adapter.h
+@@ -164,6 +164,10 @@
+ 
+             const sp<MiniFence>& get() const {
+                 return mFences.front();
++            }
++
++            const sp<MiniFence>& getCurrent() const {
++                return mFences.back();
+             }
+ 
+         private:
+@@ -263,7 +267,7 @@
+             void generateChanges();
+ 
+             bool hasChanges() const;
+-            HWC2::Error set(hwc_display_contents_1& hwcContents);
++            HWC2::Error set(hwc_display_contents_1& hwcContents, bool validateOnly = false);
+             void addRetireFence(int fenceFd);
+             void addReleaseFences(const hwc_display_contents_1& hwcContents);
+ 

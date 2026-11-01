@@ -1,0 +1,3 @@
+# Virgo runs its HAL1 provider in cameraserver (passthrough), rather than
+# in hal_camera_default. It opens the V4L2 camera nodes in that process.
+allow cameraserver video_device:chr_file rw_file_perms;

@@ -1,0 +1,10 @@
+on post-fs-data
+    mkdir /data/vendor/virgo-display 0770 system system
+    restorecon_recursive /data/vendor/virgo-display
+    chown system system /sys/devices/platform/kcal_ctrl.0/kcal_sat
+    chmod 0660 /sys/devices/platform/kcal_ctrl.0/kcal_sat
+
+service vendor.livedisplay-virgo /vendor/bin/hw/vendor.lineage.livedisplay@2.0-service.virgo
+    class hal
+    user system
+    group system

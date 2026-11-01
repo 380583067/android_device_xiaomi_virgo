@@ -1,0 +1,22 @@
+--- a/rootdir/etc/init.target.rc
++++ b/rootdir/etc/init.target.rc
+@@ -170,7 +170,8 @@
+ service mpdecision /vendor/bin/mpdecision --avg_comp
+    class main
+    user root
+-   group root readproc
++   # CPU frequency limits are system:system 0664; use their owning group.
++   group root system readproc
+    disabled
+ 
+ service adsprpcd /vendor/bin/adsprpcd
+@@ -205,7 +206,8 @@
+ service thermal-engine /system/vendor/bin/thermal-engine --config /system/vendor/etc/thermal-engine-perf.conf
+     class main
+     user root
+-    group root
++    # Init assigns CPU/thermal control nodes to system; avoid DAC bypass.
++    group root system
+     socket thermal-send-client stream 0666 system system
+     socket thermal-recv-client stream 0660 system system
+     socket thermal-recv-passive-client stream 0666 system system

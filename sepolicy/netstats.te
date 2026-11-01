@@ -1,0 +1,4 @@
+# Android 14's network stats service runs in system_server. On this pre-BPF
+# kernel it must select per-UID counter sets and delete retired UID counters
+# through xt_qtaguid's control file, as netd did on older Android releases.
+allow system_server proc_qtaguid_ctrl:file { getattr open write };

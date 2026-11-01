@@ -1,0 +1,52 @@
+diff --git a/src/com/android/camera/app/CameraController.java b/src/com/android/camera/app/CameraController.java
+index 7921335..7c0e790 100644
+--- a/src/com/android/camera/app/CameraController.java
++++ b/src/com/android/camera/app/CameraController.java
+@@ -23,6 +23,7 @@ import com.android.camera.CameraDisabledException;
+ import com.android.camera.debug.Log;
+ import com.android.camera.device.ActiveCameraDeviceTracker;
+ import com.android.camera.device.CameraId;
++import com.android.camera.one.v1.LegacyOneCameraManagerImpl;
+ import com.android.camera.util.CameraUtil;
+ import com.android.camera.util.GservicesHelper;
+ import com.android.ex.camera2.portability.CameraAgent;
+@@ -172,6 +173,12 @@ public class CameraController implements CameraAgent.CameraOpenCallback, CameraP
+         if (mRequestingCameraId != camera.getCameraId()) {
+             return;
+         }
++        // ResolutionSetting must not reopen an in-use HAL1 camera to query sizes:
++        // cameraserver would evict this preview connection from the same process.
++        if (camera.getCamera() != null) {
++            LegacyOneCameraManagerImpl.cacheCameraCharacteristics(
++                    camera.getCameraId(), camera.getParameters());
++        }
+         mCameraProxy = camera;
+         mRequestingCameraId = EMPTY_REQUEST;
+         if (mCallbackReceiver != null) {
+diff --git a/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java b/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java
+index facf661..ba1936c 100644
+--- a/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java
++++ b/src/com/android/camera/one/v1/LegacyOneCameraManagerImpl.java
+@@ -127,6 +127,22 @@ public class LegacyOneCameraManagerImpl implements OneCameraManager {
+         return null;
+     }
+ 
++    /** Seed immutable capabilities from the already opened Camera1 device. */
++    public static void cacheCameraCharacteristics(int cameraId, Camera.Parameters parameters) {
++        if (INSTANCE == null || !INSTANCE.isPresent() || parameters == null) {
++            return;
++        }
++        LegacyOneCameraManagerImpl manager = INSTANCE.get();
++        CameraId id = CameraId.fromLegacyId(cameraId);
++        OneCameraCharacteristics characteristics = new OneCameraCharacteristicsImpl(
++                manager.mCameraInfos[cameraId], parameters);
++        if (id.equals(manager.mFirstBackCameraId)) {
++            manager.mBackCameraCharacteristics = characteristics;
++        } else if (id.equals(manager.mFirstFrontCameraId)) {
++            manager.mFrontCameraCharacteristics = characteristics;
++        }
++    }
++
+     @Override
+     public OneCameraCharacteristics getOneCameraCharacteristics(@Nonnull CameraId cameraId)
+           throws OneCameraAccessException {

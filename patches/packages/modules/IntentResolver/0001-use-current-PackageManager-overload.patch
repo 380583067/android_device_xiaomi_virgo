@@ -1,0 +1,18 @@
+diff --git a/java/src/com/android/intentresolver/IntentForwarderActivity.java b/java/src/com/android/intentresolver/IntentForwarderActivity.java
+index 2a957d6..2026d30 100644
+--- a/java/src/com/android/intentresolver/IntentForwarderActivity.java
++++ b/java/src/com/android/intentresolver/IntentForwarderActivity.java
+@@ -431,8 +431,11 @@ public class IntentForwarderActivity extends Activity  {
+         public CompletableFuture<ResolveInfo> resolveActivityAsUser(Intent intent,
+                 String resolvedType, int flags, int userId) {
+             return CompletableFuture.supplyAsync(
+-                    () -> getPackageManager().resolveActivityAsUser(intent,
+-                            resolvedType, flags, userId));
++                    // Android 14 exposes the three-argument overload, which resolves the MIME
++                    // type from the Intent through its ContentResolver. The explicit
++                    // resolvedType is still used by cross-profile filtering above, but is not a
++                    // parameter of PackageManager.resolveActivityAsUser on this platform.
++                    () -> getPackageManager().resolveActivityAsUser(intent, flags, userId));
+         }
+ 
+         @Override

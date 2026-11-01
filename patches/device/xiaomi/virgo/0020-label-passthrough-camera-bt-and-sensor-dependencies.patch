@@ -1,0 +1,19 @@
+diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
+--- a/sepolicy/file_contexts
++++ b/sepolicy/file_contexts
+@@ -21,3 +21,15 @@
+ /(vendor|system/vendor)/lib/libmmqjpeg_codec\.so u:object_r:same_process_hal_file:s0
+ /(vendor|system/vendor)/lib/libmmjpeg\.so u:object_r:same_process_hal_file:s0
+ /(vendor|system/vendor)/lib/libjpegehw\.so u:object_r:same_process_hal_file:s0
++# The passthrough provider loads these HIDL interfaces in cameraserver.
++/(vendor|system/vendor)/lib/android\.hardware\.camera\.(common|device|provider)@[0-9]+\.[0-9]+(-(legacy|external))?\.so u:object_r:same_process_hal_file:s0
++# libsensors.leo loads the InvenSense implementation inside system_server.
++/(vendor|system/vendor)/lib/libinvensense_hal\.so u:object_r:same_process_hal_file:s0
++/(vendor|system/vendor)/lib/camera\.device@[0-9]+\.[0-9]+(-external)?-impl\.so u:object_r:same_process_hal_file:s0
++# Bluetooth uses a passthrough HAL inside the platform Bluetooth process.
++/(vendor|system/vendor)/lib/hw/android\.hardware\.bluetooth@1\.0-impl\.so u:object_r:same_process_hal_file:s0
++/(vendor|system/vendor)/lib/android\.hardware\.bluetooth@1\.0\.so u:object_r:same_process_hal_file:s0
++/(vendor|system/vendor)/lib/libbt-vendor\.so u:object_r:same_process_hal_file:s0
++# WCNSS Bluetooth's command/event and ACL channels, not general modem ports.
++/dev/smd2 u:object_r:hci_attach_dev:s0
++/dev/smd3 u:object_r:hci_attach_dev:s0

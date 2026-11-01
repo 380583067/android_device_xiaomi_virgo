@@ -1,0 +1,58 @@
+diff --git a/drivers/staging/prima/CORE/HDD/src/wlan_hdd_assoc.c b/drivers/staging/prima/CORE/HDD/src/wlan_hdd_assoc.c
+index 58a5524..576fb7a 100644
+--- a/drivers/staging/prima/CORE/HDD/src/wlan_hdd_assoc.c
++++ b/drivers/staging/prima/CORE/HDD/src/wlan_hdd_assoc.c
+@@ -100,11 +100,9 @@ v_U8_t ccpRSNOui07[ HDD_RSN_OUI_SIZE ] = { 0x00, 0x0F, 0xAC, 0x06 }; // RSN-PSK-
+ v_U8_t ccpRSNOui08[ HDD_RSN_OUI_SIZE ] = { 0x00, 0x0F, 0xAC, 0x05 };
+ #endif
+ 
+-#if defined(WLAN_FEATURE_VOWIFI_11R)
+-// Offset where the EID-Len-IE, start.
+-#define FT_ASSOC_RSP_IES_OFFSET 6 /* Capability(2) + AID(2) + Status Code(2)*/
++// Fixed fields before association-frame information elements.
++#define FT_ASSOC_RSP_IES_OFFSET 6 /* Capability(2) + Status Code(2) + AID(2) */
+ #define FT_ASSOC_REQ_IES_OFFSET 4 /* Capability(2) + LI(2) */
+-#endif
+ 
+ #define BEACON_FRAME_IES_OFFSET 12
+ 
+@@ -1794,12 +1792,33 @@ static eHalStatus hdd_AssociationCompletionHandler( hdd_adapter_t *pAdapter, tCs
+                             __func__, MAC_ADDR_ARRAY(pRoamInfo->bssid),
+                             roamResult, roamStatus);
+ 
+-                         /* inform connect result to nl80211 */
+-                         cfg80211_connect_result(dev, pRoamInfo->bssid,
+-                            reqRsnIe, reqRsnLength,
+-                            rspRsnIe, rspRsnLength,
+-                            WLAN_STATUS_SUCCESS,
+-                            GFP_KERNEL);
++                         /* Android derives negotiated HT/VHT capabilities from
++                          * both association frames. RSN-only IEs hide 802.11ac
++                          * even when firmware negotiated a VHT connection.
++                          * Keep the security-only fallback for absent frames.
++                          */
++                         if (pRoamInfo->pbFrames &&
++                             pRoamInfo->nAssocReqLength > FT_ASSOC_REQ_IES_OFFSET &&
++                             pRoamInfo->nAssocRspLength > FT_ASSOC_RSP_IES_OFFSET)
++                         {
++                             const u8 *req = pRoamInfo->pbFrames +
++                                 pRoamInfo->nBeaconLength;
++                             const u8 *rsp = req + pRoamInfo->nAssocReqLength;
++
++                             cfg80211_connect_result(dev, pRoamInfo->bssid,
++                                 req + FT_ASSOC_REQ_IES_OFFSET,
++                                 pRoamInfo->nAssocReqLength - FT_ASSOC_REQ_IES_OFFSET,
++                                 rsp + FT_ASSOC_RSP_IES_OFFSET,
++                                 pRoamInfo->nAssocRspLength - FT_ASSOC_RSP_IES_OFFSET,
++                                 WLAN_STATUS_SUCCESS, GFP_KERNEL);
++                         }
++                         else
++                         {
++                             cfg80211_connect_result(dev, pRoamInfo->bssid,
++                                 reqRsnIe, reqRsnLength,
++                                 rspRsnIe, rspRsnLength,
++                                 WLAN_STATUS_SUCCESS, GFP_KERNEL);
++                         }
+                     }
+                 }
+             }

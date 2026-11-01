@@ -1,0 +1,10 @@
+diff --git a/sepolicy/private/cache_logger.te b/sepolicy/private/cache_logger.te
+--- a/sepolicy/private/cache_logger.te
++++ b/sepolicy/private/cache_logger.te
+@@ -7,5 +7,4 @@ domain_trans(init, logcat_exec, cache_logger)
+ 
+ read_logd(cache_logger)
+-read_runtime_log_tags(cache_logger)
+ get_prop(cache_logger, logd_prop)
+ 
+ # /cache is prepared by core init and uses the existing cache_file label.

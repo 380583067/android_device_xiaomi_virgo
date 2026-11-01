@@ -1,0 +1,3 @@
+ro.camera.legacy_torch u:object_r:exported_default_prop:s0 exact bool
+persist.hwc.enable_vds u:object_r:exported_default_prop:s0 exact bool
+persist.hwc.mdpcomp.enable u:object_r:exported_default_prop:s0 exact bool

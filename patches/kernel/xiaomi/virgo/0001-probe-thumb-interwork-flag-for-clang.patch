@@ -1,0 +1,15 @@
+diff --git a/arch/arm/Makefile b/arch/arm/Makefile
+index 08bbec55e..f44715621 100644
+--- a/arch/arm/Makefile
++++ b/arch/arm/Makefile
+@@ -111,7 +111,9 @@ tune-$(CONFIG_CPU_V6)		:=$(call cc-option,-mtune=arm1136j-s,-mtune=strongarm)
+ tune-$(CONFIG_CPU_V6K)		:=$(call cc-option,-mtune=arm1136j-s,-mtune=strongarm)
+ 
+ ifeq ($(CONFIG_AEABI),y)
+-CFLAGS_ABI	:=-mabi=aapcs-linux -mno-thumb-interwork
++# Clang releases no longer accept GCC's legacy interworking switch; probe it
++# so supported GCC toolchains keep their previous ARM ABI behavior.
++CFLAGS_ABI	:=-mabi=aapcs-linux $(call cc-option,-mno-thumb-interwork,)
+ else
+ CFLAGS_ABI	:=$(call cc-option,-mapcs-32,-mabi=apcs-gnu) $(call cc-option,-mno-thumb-interwork,)
+ endif

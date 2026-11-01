@@ -1,0 +1,15 @@
+diff --git a/rootdir/etc/init.qcom.rc b/rootdir/etc/init.qcom.rc
+index 6e115d6..10c67d8 100644
+--- a/rootdir/etc/init.qcom.rc
++++ b/rootdir/etc/init.qcom.rc
+@@ -289,8 +289,8 @@ on enable-low-power
+     write /sys/module/msm_thermal/core_control/enabled 1
+ 
+ on charger
+-    wait /dev/block/platform/msm_sdcc.1/by-name/system
+-    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/system /system wait ro barrier=1
++    # First-stage init already mounted system-as-root. Do not mount the system
++    # partition again at /system; that breaks legacy /vendor symlink resolution.
+     start irsc_util
+     start rmt_storage
+     # Enable Power modes and set the CPU Freq Sampling rates

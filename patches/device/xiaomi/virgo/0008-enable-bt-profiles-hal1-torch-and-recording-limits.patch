@@ -1,0 +1,32 @@
+diff --git a/system_prop.mk b/system_prop.mk
+--- a/system_prop.mk
++++ b/system_prop.mk
+@@ -23,3 +23,17 @@
+ PRODUCT_PROPERTY_OVERRIDES += \
+     bluetooth.core.le.vendor_capabilities.enabled=false \
+     persist.camera.hal1.nv12_venus=true
++
++# Android 14 Bluetooth profile services default to disabled unless selected.
++PRODUCT_SYSTEM_PROPERTIES += \
++    bluetooth.profile.a2dp.source.enabled=true \
++    bluetooth.profile.avrcp.target.enabled=true \
++    bluetooth.profile.hfp.ag.enabled=true \
++    bluetooth.profile.hid.host.enabled=true \
++    bluetooth.profile.opp.enabled=true \
++    bluetooth.profile.pan.nap.enabled=true \
++    bluetooth.profile.pan.panu.enabled=true \
++    bluetooth.profile.pbap.server.enabled=true
++
++# HAL1 has no independent Camera2 torch API. Use the Camera1 preview fallback.
++PRODUCT_SYSTEM_PROPERTIES += ro.camera.legacy_torch=true
+diff --git a/overlay/frameworks/base/packages/SystemUI/res/values/config.xml b/overlay/frameworks/base/packages/SystemUI/res/values/config.xml
+new file mode 100644
+--- /dev/null
++++ b/overlay/frameworks/base/packages/SystemUI/res/values/config.xml
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="utf-8"?>
++<resources>
++    <!-- Adreno 330 shares bandwidth with the display and AVC encoder. -->
++    <integer name="config_screenRecorderMaxFramerate">30</integer>
++    <string name="config_screenRecorderAVCProfileLevel" translatable="false">4.1</string>
++</resources>

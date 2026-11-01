@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Both probe slots intentionally use the HTTP endpoint requested for Virgo. -->
+    <string name="config_captive_portal_http_url" translatable="false">http://captive.v2ex.co/generate_204</string>
+    <string name="config_captive_portal_https_url" translatable="false">http://captive.v2ex.co/generate_204</string>
+</resources>

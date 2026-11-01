@@ -1,0 +1,43 @@
+diff --git a/msm8974-common.mk b/msm8974-common.mk
+--- a/msm8974-common.mk
++++ b/msm8974-common.mk
+@@ -56,6 +56,11 @@
+     AntHalService \
+     libantradio
+ 
++# Linux 3.4 has no cgroup v2. Supply the v1 process-tracking hierarchy used
++# by libprocessgroup's mounted-controller fallback.
++PRODUCT_COPY_FILES += \
++    $(LOCAL_PATH)/rootdir/etc/cgroups.json:$(TARGET_COPY_OUT_VENDOR)/etc/cgroups.json
++
+ # APEX
+ PRODUCT_COPY_FILES += \
+     $(LOCAL_PATH)/configs/ld.config.txt:system/etc/swcodec/ld.config.txt
+diff --git a/rootdir/etc/cgroups.json b/rootdir/etc/cgroups.json
+new file mode 100644
+--- /dev/null
++++ b/rootdir/etc/cgroups.json
+@@ -0,0 +1,9 @@
++{
++  "Cgroups": [
++    {
++      "Controller": "cpuacct",
++      "Path": "/acct",
++      "Mode": "0000"
++    }
++  ]
++}
+diff --git a/rootdir/etc/init.target.rc b/rootdir/etc/init.target.rc
+--- a/rootdir/etc/init.target.rc
++++ b/rootdir/etc/init.target.rc
+@@ -29,6 +29,10 @@
+ 
+ on early-init
+     symlink /data/tombstones /tombstones
++    # /acct is a mount point on the read-only system-as-root partition.
++    # Set ownership only after CgroupSetup has mounted the writable v1 fs.
++    chown system system /acct
++    chmod 0775 /acct
+ 
+ on init
+     # Set the property to indicate type of virtual display to 0

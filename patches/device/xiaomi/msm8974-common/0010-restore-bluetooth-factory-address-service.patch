@@ -1,0 +1,176 @@
+diff --git a/sepolicy/file_contexts b/sepolicy/file_contexts
+--- a/sepolicy/file_contexts
++++ b/sepolicy/file_contexts
+@@ -3,7 +3,7 @@
+ /data/system/sensors/settings                                u:object_r:device:s0
+ 
+ # Bluetooth
+-/vendor/bin/bdaddr_xiaomi                                    u:object_r:bdaddr_exec:s0
++/(vendor|system/vendor)/bin/bdaddr_xiaomi                     u:object_r:bdaddr_exec:s0
+ 
+ #============= cmhw ==============
+ /sys/vibrator/pwmvalue                                       u:object_r:vibeamp_sysfs:s0
+diff --git a/sepolicy/bdaddr.te b/sepolicy/bdaddr.te
+--- a/sepolicy/bdaddr.te
++++ b/sepolicy/bdaddr.te
+@@ -1,5 +1,5 @@
+ type bdaddr, domain;
+-type bdaddr_exec, exec_type, file_type;
++type bdaddr_exec, exec_type, vendor_file_type, file_type;
+ 
+ init_daemon_domain(bdaddr)
+ 
+@@ -15,3 +15,16 @@
+ allow bdaddr self:capability { fsetid dac_override };
+ 
+ allow bdaddr smem_log_device:chr_file rw_file_perms;
++
++# The hciattach shell runs as the existing firmware-loader domain. Running it
++# as the generic QTI init shell prevents execution of hci_qcomm_init entirely.
++typeattribute bluetooth_loader_exec vendor_file_type;
++domain_trans(init, vendor_shell_exec, bluetooth_loader)
++allow bluetooth_loader vendor_shell_exec:file rx_file_perms;
++allow bluetooth_loader qti_init_shell_exec:file r_file_perms;
++allow bluetooth_loader bluetooth_loader_exec:file rx_file_perms;
++allow bluetooth_loader vendor_toolbox_exec:file rx_file_perms;
++r_dir_file(bluetooth_loader, bluetooth_data_file)
++# The passthrough HAL opens only the two HCI channels labeled by this device.
++allow bluetooth hci_attach_dev:chr_file rw_file_perms;
++allow bluetooth_loader hci_attach_dev:chr_file rw_file_perms;
+diff --git a/rootdir/etc/init.qcom.rc b/rootdir/etc/init.qcom.rc
+--- a/rootdir/etc/init.qcom.rc
++++ b/rootdir/etc/init.qcom.rc
+@@ -465,10 +465,6 @@
+     user root
+     oneshot
+ 
+-on property:init.svc.bdaddr=stopped
+-    chmod 644 /data/misc/bluetooth/bdaddr
+-    chown bluetooth bluetooth /data/misc/bluetooth/bdaddr
+-
+ on property:vold.decrypt=trigger_restart_framework
+     start qcom-c_main-sh
+ 
+@@ -482,8 +478,10 @@
+ 
+ service bdaddr /vendor/bin/bdaddr_xiaomi
+     class core
+-    user root
+-    group system
++    # Create the address as its final owner; vendor init cannot watch the
++    # private init.svc.bdaddr property on Android 14 to repair ownership later.
++    user bluetooth
++    group bluetooth radio
+     oneshot
+ 
+ service rmt_storage /vendor/bin/rmt_storage
+@@ -506,6 +504,7 @@
+     class late_start
+     user bluetooth
+     group bluetooth net_bt_admin
++    seclabel u:r:bluetooth_loader:s0
+     disabled
+     oneshot
+ 
+diff --git a/rootdir/bin/init.qcom.bt.sh b/rootdir/bin/init.qcom.bt.sh
+--- a/rootdir/bin/init.qcom.bt.sh
++++ b/rootdir/bin/init.qcom.bt.sh
+@@ -40,18 +40,18 @@
+      logi "Power Class: To override, Before turning BT ON; setprop qcom.bt.dev_power_class <1 or 2 or 3>";;
+ esac
+ 
+-if [$BDADDR == ""]
++if [ -z "$BDADDR" ]
+ then
+ /vendor/bin/hci_qcomm_init -e $PWR_CLASS
+ else
+-/vendor/bin/hci_qcomm_init -b $BDADDR -e $PWR_CLASS
++/vendor/bin/hci_qcomm_init -b "$BDADDR" -e $PWR_CLASS
+ fi
++exit_code_hci_qcomm_init=$?
+ 
+-case $? in
++case $exit_code_hci_qcomm_init in
+   0) logi "Bluetooth QSoC firmware download succeeded, $BTS_DEVICE $BTS_TYPE $BTS_BAUD $BTS_ADDRESS";;
+-  *) failed "Bluetooth QSoC firmware download failed" $exit_code_hci_qcomm_init;
+-     setprop vendor.bluetooth.status off
+-     exit $exit_code_hci_qcomm_init;;
++  *) setprop vendor.bluetooth.status off
++     failed "Bluetooth QSoC firmware download failed" "$exit_code_hci_qcomm_init";;
+ esac
+ 
+ setprop vendor.bluetooth.status on
+diff --git a/bdaddr_xiaomi/bdaddr_xiaomi.c b/bdaddr_xiaomi/bdaddr_xiaomi.c
+--- a/bdaddr_xiaomi/bdaddr_xiaomi.c
++++ b/bdaddr_xiaomi/bdaddr_xiaomi.c
+@@ -29,12 +29,52 @@
+ 
+ extern int qmi_nv_read_bd_addr(char** mac);
+ 
++static int valid_address(const unsigned char *address)
++{
++    int i, nonzero = 0;
++    if (address[0] & 1) {
++        return 0;
++    }
++    for (i = 0; i < MAC_ADDR_SIZE; i++) {
++        nonzero |= address[i];
++    }
++    return nonzero != 0;
++}
++
++static int saved_address_is_valid(void)
++{
++    unsigned int values[MAC_ADDR_SIZE];
++    unsigned char address[MAC_ADDR_SIZE];
++    FILE *fp = fopen(BD_ADDR_FILE, "r");
++    int i, fields;
++    if (!fp) {
++        return 0;
++    }
++    fields = fscanf(fp, "%2x:%2x:%2x:%2x:%2x:%2x", &values[0], &values[1],
++                    &values[2], &values[3], &values[4], &values[5]);
++    fclose(fp);
++    if (fields != MAC_ADDR_SIZE) {
++        return 0;
++    }
++    for (i = 0; i < MAC_ADDR_SIZE; i++) {
++        address[i] = values[i];
++    }
++    return valid_address(address);
++}
++
+ int main()
+ {
+     unsigned char bt_addr[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+     char* nv_bt_mac = NULL;
+     int ret, i;
+     FILE *fp;
++
++    // Keep an already provisioned address when a later NV read is unavailable.
++    // In particular, do not replace it with the all-zero NV response.
++    if (saved_address_is_valid()) {
++        ALOGI("Using the saved Bluetooth address");
++        return 0;
++    }
+ 
+     // Read bluetooth address from modem NV
+     ret = qmi_nv_read_bd_addr(&nv_bt_mac);
+@@ -47,9 +87,17 @@
+     for (i = 0; i < MAC_ADDR_SIZE; i++) {
+         bt_addr[i] = nv_bt_mac[6 - 1 - i];
+     }
++    if (!valid_address(bt_addr)) {
++        ALOGE("Modem NV returned an invalid Bluetooth address");
++        return 1;
++    }
+ 
+     // Store bluetooth address in a file
+     fp = fopen(BD_ADDR_FILE, "w");
++    if (!fp) {
++        ALOGE("Cannot create %s", BD_ADDR_FILE);
++        return 1;
++    }
+     fprintf(fp, "%02X:%02X:%02X:%02X:%02X:%02X\n",
+             bt_addr[0], bt_addr[1], bt_addr[2], bt_addr[3], bt_addr[4], bt_addr[5]);
+     fclose(fp);

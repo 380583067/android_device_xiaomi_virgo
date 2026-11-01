@@ -1,0 +1,26 @@
+diff --git a/system_prop.mk b/system_prop.mk
+--- a/system_prop.mk
++++ b/system_prop.mk
+@@ -1,6 +1,10 @@
+ # Charger
+ PRODUCT_PROPERTY_OVERRIDES += \
+     ro.charger.enable_suspend=true
++
++# Linux 3.4 FunctionFS has no asynchronous I/O support. Select adbd's
++# blocking legacy transport before the daemon starts; aio_compat is set in rc.
++PRODUCT_SYSTEM_PROPERTIES += ro.adb.nonblocking_ffs=false
+ 
+ # Dalvik heap
+ PRODUCT_PROPERTY_OVERRIDES += \
+diff --git a/rootdir/etc/init.qcom.usb.rc b/rootdir/etc/init.qcom.usb.rc
+--- a/rootdir/etc/init.qcom.usb.rc
++++ b/rootdir/etc/init.qcom.usb.rc
+@@ -41,8 +41,6 @@
+     mkdir /dev/bus/usb 0755 root root
+ 
+     setprop sys.usb.ffs.aio_compat 1
+-    setprop persist.adb.nonblocking_ffs 0
+-    setprop ro.adb.nonblocking_ffs 0
+ 
+ service qcom-usb-sh /vendor/bin/sh /vendor/bin/init.qcom.usb.sh
+     class core

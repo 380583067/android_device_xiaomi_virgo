@@ -1,0 +1,14 @@
+diff --git a/core/main.mk b/core/main.mk
+--- a/core/main.mk
++++ b/core/main.mk
+@@ -55,6 +55,10 @@
+ .KATI_RESTAT: $(BUILD_HOSTNAME_FILE)
+ 
+ DATE_FROM_FILE := date -d @$(BUILD_DATETIME_FROM_FILE)
++ifeq ($(TARGET_PRODUCT),lineage_virgo)
++# Render the fixed instant in Beijing time regardless of the build host's zone.
++DATE_FROM_FILE := env TZ=Asia/Shanghai date -d @$(BUILD_DATETIME_FROM_FILE)
++endif
+ .KATI_READONLY := DATE_FROM_FILE
+ 
+ 

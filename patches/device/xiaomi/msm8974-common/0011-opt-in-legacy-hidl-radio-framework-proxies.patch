@@ -1,0 +1,29 @@
+diff --git a/system_prop.mk b/system_prop.mk
+--- a/system_prop.mk
++++ b/system_prop.mk
+@@ -5,6 +5,9 @@
+ # Linux 3.4 FunctionFS has no asynchronous I/O support. Select adbd's
+ # blocking legacy transport before the daemon starts; aio_compat is set in rc.
+ PRODUCT_SYSTEM_PROPERTIES += ro.adb.nonblocking_ffs=false
++
++# Keep framework modem/network/SIM/voice proxies available for the old HIDL RIL.
++PRODUCT_VENDOR_PROPERTIES += ro.vendor.radio.legacy_hidl=true
+ 
+ # Dalvik heap
+ PRODUCT_PROPERTY_OVERRIDES += \
+diff --git a/rootdir/etc/init.qcom.rc b/rootdir/etc/init.qcom.rc
+--- a/rootdir/etc/init.qcom.rc
++++ b/rootdir/etc/init.qcom.rc
+@@ -569,6 +569,12 @@
+     # Adjust socket buffer to enlarge TCP receive window for high bandwidth (e.g. DO-RevB)
+     write /proc/sys/net/ipv4/tcp_adv_win_scale  2
+ 
++# The legacy Qualcomm DSDS library uses one single-SIM callback ABI per
++# process. Start its second instance from init instead of the old shell's
++# property/control sequence, which can finish without starting this service.
++on boot && property:persist.radio.multisim.config=dsds
++    start ril-daemon2
++
+ service ril-daemon2 /system/vendor/bin/hw/rild -c 2
+     class main
+     socket rild2 stream 660 root radio

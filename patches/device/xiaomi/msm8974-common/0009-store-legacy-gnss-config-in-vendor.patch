@@ -1,0 +1,56 @@
+diff --git a/msm8974-common.mk b/msm8974-common.mk
+--- a/msm8974-common.mk
++++ b/msm8974-common.mk
+@@ -138,13 +138,17 @@
+ PRODUCT_PACKAGES += \
+     android.hardware.gnss@1.0-impl.legacy \
+     android.hardware.gnss@1.0-service.legacy \
+-    gps.msm8974
++    gps.msm8974 \
++    msm8974_gps_conf_legacy_link \
++    msm8974_flp_conf_legacy_link \
++    msm8974_izat_conf_legacy_link \
++    msm8974_sap_conf_legacy_link
+  
+ PRODUCT_COPY_FILES += \
+-    $(LOCAL_PATH)/gps/etc/gps.conf:system/etc/gps.conf \
+-    $(LOCAL_PATH)/gps/etc/flp.conf:system/etc/flp.conf \
+-    $(LOCAL_PATH)/gps/etc/izat.conf:system/etc/izat.conf \
+-    $(LOCAL_PATH)/gps/etc/sap.conf:system/etc/sap.conf
++    $(LOCAL_PATH)/gps/etc/gps.conf:system/vendor/etc/gps.conf \
++    $(LOCAL_PATH)/gps/etc/flp.conf:system/vendor/etc/flp.conf \
++    $(LOCAL_PATH)/gps/etc/izat.conf:system/vendor/etc/izat.conf \
++    $(LOCAL_PATH)/gps/etc/sap.conf:system/vendor/etc/sap.conf
+ 
+ # Graphics
+ PRODUCT_PACKAGES += \
+diff --git a/rootdir/Android.bp b/rootdir/Android.bp
+new file mode 100644
+--- /dev/null
++++ b/rootdir/Android.bp
+@@ -0,0 +1,25 @@
++// Preserve the /etc paths used by the old GPS binaries while storing vendor
++// configuration under /vendor/etc with the existing vendor_configs_file label.
++install_symlink {
++    name: "msm8974_gps_conf_legacy_link",
++    installed_location: "etc/gps.conf",
++    symlink_target: "/vendor/etc/gps.conf",
++}
++
++install_symlink {
++    name: "msm8974_flp_conf_legacy_link",
++    installed_location: "etc/flp.conf",
++    symlink_target: "/vendor/etc/flp.conf",
++}
++
++install_symlink {
++    name: "msm8974_izat_conf_legacy_link",
++    installed_location: "etc/izat.conf",
++    symlink_target: "/vendor/etc/izat.conf",
++}
++
++install_symlink {
++    name: "msm8974_sap_conf_legacy_link",
++    installed_location: "etc/sap.conf",
++    symlink_target: "/vendor/etc/sap.conf",
++}

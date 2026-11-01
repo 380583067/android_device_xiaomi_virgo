@@ -1,0 +1,50 @@
+From: Virgo kernel migration
+Subject: [PATCH] virgo: provide a standalone GCC 7.5 kernel build
+
+diff --git a/build-kernel-gcc75.sh b/build-kernel-gcc75.sh
+new file mode 100755
+--- /dev/null
++++ b/build-kernel-gcc75.sh
+@@ -0,0 +1,42 @@
++#!/usr/bin/env bash
++# Standalone kernel build, seeded from the known-booting GCC 4.9 configuration.
++set -euo pipefail
++DEVICE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
++BUILD_TOP="$(cd -- "$DEVICE_DIR/../../.." && pwd)"
++VIRGO_KERNEL_GCC75_ROOT="${VIRGO_KERNEL_GCC75_ROOT:-$BUILD_TOP/../gcc-linaro-7.5.0-2019.12-x86_64_arm-linux-gnueabi}"
++BASELINE_OUT="${BASELINE_OUT:-/run/media/root/c309382c-cda1-4153-ad35-de1784b9715e/virgo-out}"
++KERNEL_OUT="${KERNEL_OUT:-/run/media/root/c309382c-cda1-4153-ad35-de1784b9715e/kernel7.5out}"
++JOBS="${JOBS:-18}"
++KERNEL_CONFIG_SEED="${KERNEL_CONFIG_SEED:-$BASELINE_OUT/target/product/virgo/obj/KERNEL_OBJ/.config}"
++CROSS_COMPILE="$VIRGO_KERNEL_GCC75_ROOT/bin/arm-linux-gnueabi-"
++
++[[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || { echo 'JOBS must be positive' >&2; exit 1; }
++"${CROSS_COMPILE}gcc" --version
++[[ "$("${CROSS_COMPILE}gcc" -dumpfullversion)" == 7.5.0 ]] || {
++    echo 'Expected GCC 7.5.0' >&2; exit 1;
++}
++mkdir -p -- "$KERNEL_OUT"
++KERNEL_OUT="$(cd -- "$KERNEL_OUT" && pwd -P)"
++BASELINE_OUT="$(cd -- "$BASELINE_OUT" && pwd -P)"
++case "$KERNEL_OUT/" in
++    "$BASELINE_OUT/"*|"$BUILD_TOP/kernel/xiaomi/virgo/")
++        echo 'Choose a separate output directory to preserve the baseline/source' >&2
++        exit 1 ;;
++esac
++mkdir -p -- "$KERNEL_OUT/migration"
++if [[ ! -e "$KERNEL_OUT/.config" ]]; then
++    cp -- "$KERNEL_CONFIG_SEED" "$KERNEL_OUT/.config"
++    cp -- "$KERNEL_CONFIG_SEED" "$KERNEL_OUT/migration/seed.config"
++fi
++make_args=(-C "$BUILD_TOP/kernel/xiaomi/virgo" "O=$KERNEL_OUT" ARCH=arm
++    "CROSS_COMPILE=$CROSS_COMPILE" KBUILD_BUILD_USER=nobody
++    KBUILD_BUILD_HOST=android-build)
++log="$KERNEL_OUT/migration/build-$(date +%Y%m%d-%H%M%S).log"
++{
++    printf 'Command:'
++    printf ' %q' make "${make_args[@]}" "-j$JOBS" zImage dtbs
++    printf '\n'
++    make "${make_args[@]}" oldnoconfig
++    make "${make_args[@]}" "-j$JOBS" zImage dtbs
++    sha256sum "$KERNEL_OUT/arch/arm/boot/zImage" "$KERNEL_OUT/vmlinux"
++} 2>&1 | tee "$log"

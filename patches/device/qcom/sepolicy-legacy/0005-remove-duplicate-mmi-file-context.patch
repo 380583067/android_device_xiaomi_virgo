@@ -1,0 +1,12 @@
+diff --git a/private/file_contexts b/private/file_contexts
+--- a/private/file_contexts
++++ b/private/file_contexts
+@@ -47,7 +47,7 @@
+ /system/bin/smcinvoked                          u:object_r:smcinvoke_daemon_exec:s0
+ /system/bin/qvrservice                          u:object_r:qvrd_exec:s0
+ /(vendor|system/vendor)/bin/wfdservice                          u:object_r:wfdservice_exec:s0
+-/(vendor|system/vendor)/bin/mmi                                 u:object_r:mmi_sys_exec:s0
++# Vendor mmi is labeled mmi_exec in common/file_contexts.
+ /(vendor|system/vendor)/bin/mmi_diag                            u:object_r:mmi_sys_exec:s0
+ 
+ ####### data files ################

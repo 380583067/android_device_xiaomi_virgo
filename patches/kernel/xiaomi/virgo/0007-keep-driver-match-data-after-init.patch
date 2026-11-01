@@ -1,0 +1,141 @@
+From: Virgo kernel migration
+Subject: [PATCH] ARM: msm: retain match tables and GDSC counter after init
+
+diff --git a/arch/arm/mach-msm/gdsc.c b/arch/arm/mach-msm/gdsc.c
+--- a/arch/arm/mach-msm/gdsc.c
++++ b/arch/arm/mach-msm/gdsc.c
+@@ -146,7 +146,7 @@
+ 
+ static int __devinit gdsc_probe(struct platform_device *pdev)
+ {
+-	static atomic_t gdsc_count __initdata = ATOMIC_INIT(-1);
++	static atomic_t gdsc_count = ATOMIC_INIT(-1);
+ 	struct regulator_init_data *init_data;
+ 	struct resource *res;
+ 	struct gdsc *sc;
+@@ -274,7 +274,7 @@
+ 	return 0;
+ }
+ 
+-static struct of_device_id gdsc_match_table[] __initdata = {
++static const struct of_device_id gdsc_match_table[] = {
+ 	{ .compatible = "qcom,gdsc" },
+ 	{}
+ };
+diff --git a/arch/arm/mach-msm/krait-regulator.c b/arch/arm/mach-msm/krait-regulator.c
+--- a/arch/arm/mach-msm/krait-regulator.c
++++ b/arch/arm/mach-msm/krait-regulator.c
+@@ -1400,7 +1400,7 @@
+ 	return 0;
+ }
+ 
+-static struct of_device_id krait_power_match_table[] __initdata = {
++static const struct of_device_id krait_power_match_table[] = {
+ 	{ .compatible = "qcom,krait-regulator", },
+ 	{}
+ };
+@@ -1415,7 +1415,7 @@
+ 	},
+ };
+ 
+-static struct of_device_id krait_pdn_match_table[] __initdata = {
++static const struct of_device_id krait_pdn_match_table[] = {
+ 	{ .compatible = "qcom,krait-pdn", },
+ 	{}
+ };
+diff --git a/arch/arm/mach-msm/krait-regulator-pmic.c b/arch/arm/mach-msm/krait-regulator-pmic.c
+--- a/arch/arm/mach-msm/krait-regulator-pmic.c
++++ b/arch/arm/mach-msm/krait-regulator-pmic.c
+@@ -72,7 +72,7 @@
+ 
+ static struct krait_vreg_pmic_chip *the_chip;
+ 
+-static struct of_device_id krait_vreg_pmic_match_table[] __initdata = {
++static const struct of_device_id krait_vreg_pmic_match_table[] = {
+ 	{ .compatible = KRAIT_REG_PMIC_DEV_NAME },
+ 	{}
+ };
+diff --git a/arch/arm/mach-msm/msm-pm.c b/arch/arm/mach-msm/msm-pm.c
+--- a/arch/arm/mach-msm/msm-pm.c
++++ b/arch/arm/mach-msm/msm-pm.c
+@@ -991,7 +991,7 @@
+ 	return 0;
+ };
+ 
+-static struct of_device_id msm_slp_sts_match_tbl[] __initdata= {
++static const struct of_device_id msm_slp_sts_match_tbl[] = {
+ 	{.compatible = "qcom,cpu-sleep-status"},
+ 	{},
+ };
+@@ -1005,7 +1005,7 @@
+ 	},
+ };
+ 
+-static struct of_device_id msm_snoc_clnt_match_tbl[] __initdata = {
++static const struct of_device_id msm_snoc_clnt_match_tbl[] = {
+ 	{.compatible = "qcom,pm-snoc-client"},
+ 	{},
+ };
+@@ -1272,7 +1272,7 @@
+ 	return ret;
+ }
+ 
+-static struct of_device_id msm_cpu_pm_table[] __initdata = {
++static const struct of_device_id msm_cpu_pm_table[] = {
+ 	{.compatible = "qcom,pm-8x60"},
+ 	{},
+ };
+diff --git a/arch/arm/mach-msm/lpm_levels.c b/arch/arm/mach-msm/lpm_levels.c
+--- a/arch/arm/mach-msm/lpm_levels.c
++++ b/arch/arm/mach-msm/lpm_levels.c
+@@ -1127,7 +1127,7 @@
+ 	return -EFAULT;
+ }
+ 
+-static struct of_device_id cpu_modes_mtch_tbl[] __initdata = {
++static const struct of_device_id cpu_modes_mtch_tbl[] = {
+ 	{.compatible = "qcom,cpu-modes"},
+ 	{},
+ };
+@@ -1141,7 +1141,7 @@
+ 	},
+ };
+ 
+-static struct of_device_id system_modes_mtch_tbl[] __initdata = {
++static const struct of_device_id system_modes_mtch_tbl[] = {
+ 	{.compatible = "qcom,system-modes"},
+ 	{},
+ };
+@@ -1155,7 +1155,7 @@
+ 	},
+ };
+ 
+-static struct of_device_id lpm_levels_match_table[] __initdata = {
++static const struct of_device_id lpm_levels_match_table[] = {
+ 	{.compatible = "qcom,lpm-levels"},
+ 	{},
+ };
+diff --git a/arch/arm/mach-msm/ext-buck-control.c b/arch/arm/mach-msm/ext-buck-control.c
+--- a/arch/arm/mach-msm/ext-buck-control.c
++++ b/arch/arm/mach-msm/ext-buck-control.c
+@@ -100,7 +100,7 @@
+ 	return ret;
+ }
+ 
+-static struct of_device_id msm_ext_buck_table[] __initdata = {
++static const struct of_device_id msm_ext_buck_table[] = {
+ 	{.compatible = "qcom,ext-buck-control"},
+ 	{},
+ };
+diff --git a/arch/arm/mach-msm/rpm-smd.c b/arch/arm/mach-msm/rpm-smd.c
+--- a/arch/arm/mach-msm/rpm-smd.c
++++ b/arch/arm/mach-msm/rpm-smd.c
+@@ -1403,7 +1403,7 @@
+ 	return -EINVAL;
+ }
+ 
+-static struct of_device_id msm_rpm_match_table[] __initdata =  {
++static const struct of_device_id msm_rpm_match_table[] = {
+ 	{.compatible = "qcom,rpm-smd"},
+ 	{},
+ };

@@ -1,0 +1,47 @@
+diff --git a/FmRadioController.cpp b/FmRadioController.cpp
+index 9946cce..4161d1c 100644
+--- a/FmRadioController.cpp
++++ b/FmRadioController.cpp
+@@ -86,6 +86,7 @@ FmRadioController :: ~FmRadioController
+     if(event_listener_thread != 0) {
+         event_listener_canceled = true;
+         pthread_join(event_listener_thread, NULL);
++        event_listener_thread = 0;
+     }
+ }
+ 
+@@ -186,6 +187,7 @@ int FmRadioController ::Pwr_Up(int freq)
+             }
+         }
+         if (event_listener_thread == 0) {
++            event_listener_canceled = false;
+             ret = pthread_create(&event_listener_thread, NULL,
+                                               handle_events, this);
+             if (ret == 0) {
+@@ -267,6 +269,7 @@ exit:
+ close_fd:
+     event_listener_canceled = true;
+     pthread_join(event_listener_thread, NULL);
++    event_listener_thread = 0;
+     if (strcmp(value, "rome") != 0) {
+         ret = FmIoctlsInterface::close_fm_patch_dl();
+         if (ret != FM_SUCCESS) {
+@@ -277,8 +280,8 @@ close_fd:
+     fd_driver = -1;
+     set_fm_state(FM_OFF);
+ 
+-    ALOGD("%s, [ret=%d]\n", __func__, ret);
+-    return ret;
++    // Closing the firmware transport must not turn a failed power-up into success.
++    return FM_FAILURE;
+ }
+ 
+ int FmRadioController ::Pwr_Down()
+@@ -298,6 +301,7 @@ int FmRadioController ::Pwr_Down()
+         ALOGD("%s, event_listener_thread cancelled\n", __func__);
+         event_listener_canceled = true;
+         pthread_join(event_listener_thread, NULL);
++        event_listener_thread = 0;
+     }
+     if (strcmp(value, "rome") != 0) {
+         ret = FmIoctlsInterface::close_fm_patch_dl();

@@ -1,0 +1,11 @@
+--- a/BoardConfig.mk
++++ b/BoardConfig.mk
+@@ -26,7 +26,7 @@
+ TARGET_OTA_ASSERT_DEVICE := virgo,cancro
+ 
+ # Display
+-TARGET_SCREEN_DENSITY := 400
++TARGET_SCREEN_DENSITY := 350
+ 
+ # The stock virgo rawprogram layout reserves exactly 32768 sectors (16 MiB)
+ # for recovery. Keep the build guard at that physical partition size so the

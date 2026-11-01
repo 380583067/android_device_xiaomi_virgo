@@ -1,0 +1,118 @@
+diff --git a/system_prop.mk b/system_prop.mk
+index 8089199..257e124 100644
+--- a/system_prop.mk
++++ b/system_prop.mk
+@@ -9,11 +9,12 @@ PRODUCT_PROPERTY_OVERRIDES += \
+ 
+ PRODUCT_PROPERTY_OVERRIDES += \
+     ro.vendor.extension_library=libqti-perfd-client.so \
+-    rild.libpath=/vendor/lib/libril-qc-qmi-1.so \
++    vendor.rild.libpath=/vendor/lib/libril-qc-qmi-1.so \
++    vendor.rild.libargs=-d /dev/smd0 \
+     ril.subscription.types=NV,RUIM \
+     persist.radio.apm_sim_not_pwdn=0 \
+     mmp.enable.3g2=true \
+-    debug.stagefright.ccodec=0 \
++    debug.stagefright.ccodec=1 \
+     mm.enable.smoothstreaming=true \
+     mm.enable.qcom_parser=37491 \
+     ro.ril.enable.amr.wideband=1 \
+diff --git a/msm8974-common.mk b/msm8974-common.mk
+index 2d2aa5d..31926d9 100644
+--- a/msm8974-common.mk
++++ b/msm8974-common.mk
+@@ -25,8 +25,6 @@ PRODUCT_COPY_FILES += \
+     frameworks/native/data/etc/android.hardware.audio.low_latency.xml:system/vendor/etc/permissions/android.hardware.audio.low_latency.xml \
+     frameworks/native/data/etc/android.hardware.camera.flash-autofocus.xml:system/vendor/etc/permissions/android.hardware.camera.flash-autofocus.xml \
+     frameworks/native/data/etc/android.hardware.camera.front.xml:system/vendor/etc/permissions/android.hardware.camera.front.xml \
+-    frameworks/native/data/etc/android.hardware.camera.full.xml:system/vendor/etc/permissions/android.hardware.camera.full.xml \
+-    frameworks/native/data/etc/android.hardware.camera.raw.xml:system/vendor/etc/permissions/android.hardware.camera.raw.xml \
+     frameworks/native/data/etc/android.hardware.location.gps.xml:system/vendor/etc/permissions/android.hardware.location.gps.xml \
+     frameworks/native/data/etc/android.hardware.opengles.aep.xml:system/vendor/etc/permissions/android.hardware.opengles.aep.xml \
+     frameworks/native/data/etc/android.hardware.wifi.xml:system/vendor/etc/permissions/android.hardware.wifi.xml \
+diff --git a/rootdir/etc/init.qcom.usb.rc b/rootdir/etc/init.qcom.usb.rc
+index 61ec7d4..a5eb602 100644
+--- a/rootdir/etc/init.qcom.usb.rc
++++ b/rootdir/etc/init.qcom.usb.rc
+@@ -558,29 +558,28 @@ on property:sys.usb.config=ptp,adb
+     start adbd
+     setprop sys.usb.state ${sys.usb.config}
+ 
+-on property:sys.usb.config=mtp
++# The stock MIUI CD-ROM mass-storage function is absent on AOSP.
++on property:sys.usb.config=mtp && property:sys.usb.configfs=0
+     write /sys/class/android_usb/android0/enable 0
+     write /sys/class/android_usb/android0/idVendor 2717
+     write /sys/class/android_usb/android0/idProduct 0360
+     write /sys/class/android_usb/android0/iManufacturer ${ro.product.manufacturer}
+     write /sys/class/android_usb/android0/iProduct ${ro.product.model}
+-    write /sys/class/android_usb/android0/functions mtp,mass_storage
++    write /sys/class/android_usb/android0/functions mtp
+     write /sys/class/android_usb/android0/enable 1
+-    write /sys/class/android_usb/android0/f_mass_storage/lun/ro 1
+-    write /sys/class/android_usb/android0/f_mass_storage/lun/file /data/miui/cdrom_install.iso
+     setprop sys.usb.state ${sys.usb.config}
+ 
+-on property:sys.usb.config=mtp,adb
++on property:sys.usb.config=mtp,adb && property:sys.usb.configfs=0
++    start adbd
++
++on property:sys.usb.ffs.ready=1 && property:sys.usb.config=mtp,adb && property:sys.usb.configfs=0
+     write /sys/class/android_usb/android0/enable 0
+     write /sys/class/android_usb/android0/idVendor 2717
+     write /sys/class/android_usb/android0/idProduct 0368
+     write /sys/class/android_usb/android0/iManufacturer ${ro.product.manufacturer}
+     write /sys/class/android_usb/android0/iProduct ${ro.product.model}
+-    write /sys/class/android_usb/android0/functions mtp,mass_storage,adb
++    write /sys/class/android_usb/android0/functions mtp,adb
+     write /sys/class/android_usb/android0/enable 1
+-    write /sys/class/android_usb/android0/f_mass_storage/lun/ro 1
+-    write /sys/class/android_usb/android0/f_mass_storage/lun/file /data/miui/cdrom_install.iso
+-    start adbd
+     setprop sys.usb.state ${sys.usb.config}
+ 
+ on property:sys.usb.config=mtp,diag
+diff --git a/extract-files.sh b/extract-files.sh
+index 24a8f72..e615882 100755
+--- a/extract-files.sh
++++ b/extract-files.sh
+@@ -21,6 +21,15 @@ if [ ! -f "${HELPER}" ]; then
+ fi
+ source "${HELPER}"
+ 
++# Keep the legacy CDM's protobuf ABI separate from Android 14's runtime.
++function blob_fixup() {
++    case "${1}" in
++        vendor/lib/mediadrm/libwvdrmengine.so)
++            "${PATCHELF}" --replace-needed libprotobuf-cpp-lite.so libprotobuf-cpp-v29.so "${2}"
++            ;;
++    esac
++}
++
+ # Default to sanitizing the vendor folder before extraction
+ CLEAN_VENDOR=true
+ 
+@@ -85,4 +94,4 @@ if [ -z "${ONLY_COMMON}" ] && [ -z "${ONLY_DEVICE_COMMON}" ] && [ -s "${MY_DIR}/
+     extract "${MY_DIR}/../${DEVICE}/proprietary-files.txt" "${SRC}" "${KANG}" --section "${SECTION}"
+ fi
+ 
+-"${MY_DIR}/setup-makefiles.sh
+\ No newline at end of file
++"${MY_DIR}/setup-makefiles.sh"
+diff --git a/camera/mm-image-codec/qomx_core/qomx_core.c b/camera/mm-image-codec/qomx_core/qomx_core.c
+index 8735f4d..85e7d1d 100644
+--- a/camera/mm-image-codec/qomx_core/qomx_core.c
++++ b/camera/mm-image-codec/qomx_core/qomx_core.c
+@@ -210,7 +210,11 @@ OMX_API OMX_ERRORTYPE OMX_APIENTRY OMX_GetHandle(
+ 
+   if (FALSE == p_core_comp->open) {
+     /* load the library */
+-    p_core_comp->lib_handle = dlopen(p_core_comp->lib_name, RTLD_NOW);
++    /* Legacy JPEG components leave pthread TLS destructors registered after
++     * ComponentDeInit. Keep their code mapped until process exit so camera
++     * worker threads can safely run those destructors during teardown. */
++    p_core_comp->lib_handle = dlopen(p_core_comp->lib_name,
++      RTLD_NOW | RTLD_NODELETE);
+     if (NULL == p_core_comp->lib_handle) {
+       ALOGE("%s:%d] Cannot load the library", __func__, __LINE__);
+       rc = OMX_ErrorInvalidComponent;

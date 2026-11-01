@@ -1,0 +1,32 @@
+--- a/power-8974.c
++++ b/power-8974.c
+@@ -169,6 +169,29 @@
+ int power_hint_override(power_hint_t hint, void* data) {
+     int ret_val = HINT_NONE;
+     switch (hint) {
++        case POWER_HINT_LAUNCH: {
++            static int launch_active;
++            // MSM8974's client exposes perf_lock_acq/rel, not perf_hint.
++            // Use the resource IDs understood by its running mpctl service.
++            if (data && !launch_active) {
++                launch_active = perform_hint_action(POWER_HINT_LAUNCH, resources_launch,
++                                                   ARRAY_SIZE(resources_launch)) == 0;
++            } else if (!data && launch_active) {
++                undo_hint_action(POWER_HINT_LAUNCH);
++                launch_active = 0;
++            }
++            ret_val = HINT_HANDLED;
++            break;
++        }
++        case POWER_HINT_INTERACTION: {
++            int duration = data ? *(int*)data : 500;
++            if (duration <= 0) duration = 500;
++            if (duration > 5000) duration = 5000;
++            interaction(duration, ARRAY_SIZE(resources_interaction_boost),
++                        resources_interaction_boost);
++            ret_val = HINT_HANDLED;
++            break;
++        }
+         case POWER_HINT_VIDEO_ENCODE:
+             ret_val = process_video_encode_hint(data);
+             break;

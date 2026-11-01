@@ -1,0 +1,256 @@
+--- a/virgo.mk
++++ b/virgo.mk
+@@ -66,3 +66,6 @@
+ 
+ # Expose KCAL saturation presets through the LiveDisplay color-profile UI.
+ PRODUCT_PACKAGES += vendor.lineage.livedisplay@2.0-service.virgo
++
++# Report this kernel's mixed thermal units and stable per-sensor identities.
++PRODUCT_PACKAGES += thermal.msm8974
+diff --git a/thermal/Android.bp b/thermal/Android.bp
+new file mode 100644
+--- /dev/null
++++ b/thermal/Android.bp
+@@ -0,0 +1,18 @@
++cc_library_shared {
++    name: "thermal.msm8974",
++    vendor: true,
++    relative_install_path: "hw",
++    srcs: ["thermal.cpp"],
++    header_libs: ["libhardware_headers"],
++    cflags: ["-Wall", "-Wextra", "-Werror"],
++}
++
++cc_binary {
++    name: "virgo_thermal_probe",
++    vendor: true,
++    srcs: ["thermal_probe.cpp"],
++    header_libs: ["libhardware_headers"],
++    shared_libs: ["libdl"],
++    cflags: ["-Wall", "-Wextra", "-Werror"],
++    installable: false,
++}
+diff --git a/thermal/thermal.cpp b/thermal/thermal.cpp
+new file mode 100644
+--- /dev/null
++++ b/thermal/thermal.cpp
+@@ -0,0 +1,147 @@
++/*
++ * Copyright (C) 2026 The LineageOS Project
++ * SPDX-License-Identifier: Apache-2.0
++ */
++
++#include <hardware/thermal.h>
++
++#include <cerrno>
++#include <cstdio>
++#include <cstring>
++#include <dirent.h>
++#include <inttypes.h>
++
++namespace {
++
++struct Sensor {
++    const char* name;
++    temperature_type type;
++    float divisor;
++};
++
++// Kernel msm8974.dtsi maps CPU0..3 to TSENS5..8. The vendor thermal
++// configuration maps the GPU to TSENS10. PMIC drivers report millidegrees,
++// while this kernel's TSENS and ADC thermistors report degrees Celsius.
++constexpr Sensor kSensors[] = {
++        {"tsens_tz_sensor0", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"tsens_tz_sensor1", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"tsens_tz_sensor2", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"tsens_tz_sensor3", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"tsens_tz_sensor4", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"tsens_tz_sensor5", DEVICE_TEMPERATURE_CPU, 1},
++        {"tsens_tz_sensor6", DEVICE_TEMPERATURE_CPU, 1},
++        {"tsens_tz_sensor7", DEVICE_TEMPERATURE_CPU, 1},
++        {"tsens_tz_sensor8", DEVICE_TEMPERATURE_CPU, 1},
++        {"tsens_tz_sensor9", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"tsens_tz_sensor10", DEVICE_TEMPERATURE_GPU, 1},
++        {"pm8841_tz", DEVICE_TEMPERATURE_UNKNOWN, 1000},
++        {"pm8941_tz", DEVICE_TEMPERATURE_UNKNOWN, 1000},
++        {"pa_therm0", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"pa_therm1", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"emmc_therm", DEVICE_TEMPERATURE_UNKNOWN, 1},
++        {"msm_therm", DEVICE_TEMPERATURE_UNKNOWN, 1},
++};
++
++bool readFloat(const char* path, float* value) {
++    FILE* file = fopen(path, "re");
++    if (!file) return false;
++    const bool ok = fscanf(file, "%f", value) == 1;
++    fclose(file);
++    return ok;
++}
++
++void appendTemperature(temperature_t* list, size_t size, size_t* count,
++                       const char* name, temperature_type type, float value) {
++    if (list && *count < size) {
++        list[*count] = {type, name, value, UNKNOWN_TEMPERATURE,
++                       UNKNOWN_TEMPERATURE, UNKNOWN_TEMPERATURE};
++    }
++    ++*count;
++}
++
++ssize_t getTemperatures(thermal_module_t*, temperature_t* list, size_t size) {
++    DIR* dir = opendir("/sys/class/thermal");
++    if (!dir) return -errno;
++    size_t count = 0;
++    while (dirent* entry = readdir(dir)) {
++        if (strncmp(entry->d_name, "thermal_zone", 12)) continue;
++        char path[512], type[80];
++        snprintf(path, sizeof(path), "/sys/class/thermal/%s/type", entry->d_name);
++        FILE* file = fopen(path, "re");
++        if (!file) continue;
++        const bool ok = fscanf(file, "%79s", type) == 1;
++        fclose(file);
++        if (!ok) continue;
++        for (const auto& sensor : kSensors) {
++            if (strcmp(type, sensor.name)) continue;
++            float value;
++            snprintf(path, sizeof(path), "/sys/class/thermal/%s/temp", entry->d_name);
++            if (readFloat(path, &value)) {
++                appendTemperature(list, size, &count, sensor.name, sensor.type,
++                                  value / sensor.divisor);
++            }
++            break;
++        }
++    }
++    closedir(dir);
++    float battery;
++    if (readFloat("/sys/class/power_supply/battery/temp", &battery)) {
++        appendTemperature(list, size, &count, "battery", DEVICE_TEMPERATURE_BATTERY,
++                          battery / 10.0f);
++    }
++    // The caller allocated the capacity from a previous query. Never report
++    // more entries than actually written if sensor availability changed.
++    return list && count > size ? size : count;
++}
++
++ssize_t getCpuUsages(thermal_module_t*, cpu_usage_t* list) {
++    if (!list) return 4;
++    constexpr const char* names[] = {"cpu0", "cpu1", "cpu2", "cpu3"};
++    for (int cpu = 0; cpu < 4; ++cpu) {
++        char path[128];
++        float online = 0;
++        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%d/online", cpu);
++        if (!readFloat(path, &online)) online = cpu == 0;
++        list[cpu] = {names[cpu], 0, 0, online != 0};
++    }
++    FILE* file = fopen("/proc/stat", "re");
++    if (!file) return -errno;
++    char line[512];
++    while (fgets(line, sizeof(line), file)) {
++        unsigned cpu;
++        uint64_t user, nice, system, idle, iowait, irq, softirq, steal;
++        if (sscanf(line, "cpu%u %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64
++                        " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64,
++                   &cpu, &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal) != 9 ||
++            cpu >= 4) continue;
++        list[cpu].active = user + nice + system + irq + softirq + steal;
++        list[cpu].total = list[cpu].active + idle + iowait;
++    }
++    fclose(file);
++    return 4;
++}
++
++ssize_t getCoolingDevices(thermal_module_t*, cooling_device_t*, size_t) {
++    return 0;
++}
++
++hw_module_methods_t kMethods = {};
++
++}  // namespace
++
++extern "C" {
++thermal_module_t HAL_MODULE_INFO_SYM = {
++        .common = {
++                .tag = HARDWARE_MODULE_TAG,
++                .module_api_version = THERMAL_HARDWARE_MODULE_API_VERSION_0_1,
++                .hal_api_version = HARDWARE_HAL_API_VERSION,
++                .id = THERMAL_HARDWARE_MODULE_ID,
++                .name = "Virgo Thermal HAL",
++                .author = "The LineageOS Project",
++                .methods = &kMethods,
++        },
++        .getTemperatures = getTemperatures,
++        .getCpuUsages = getCpuUsages,
++        .getCoolingDevices = getCoolingDevices,
++};
++}
+diff --git a/thermal/thermal_probe.cpp b/thermal/thermal_probe.cpp
+new file mode 100644
+--- /dev/null
++++ b/thermal/thermal_probe.cpp
+@@ -0,0 +1,59 @@
++/* Copyright (C) 2026 The LineageOS Project
++ * SPDX-License-Identifier: Apache-2.0
++ */
++#include <hardware/thermal.h>
++#include <dlfcn.h>
++#include <cmath>
++#include <cstdio>
++#include <set>
++#include <string>
++#include <vector>
++
++int main(int argc, char** argv) {
++    if (argc != 2) return 2;
++    void* handle = dlopen(argv[1], RTLD_NOW);
++    if (!handle) { puts(dlerror()); return 2; }
++    auto* module = static_cast<thermal_module_t*>(dlsym(handle, HAL_MODULE_INFO_SYM_AS_STR));
++    if (!module || !module->getTemperatures || !module->getCpuUsages) return 2;
++    const ssize_t count = module->getTemperatures(module, nullptr, 0);
++    if (count <= 0 || count > 64) return 2;
++    std::vector<temperature_t> temps(count);
++    const ssize_t got = module->getTemperatures(module, temps.data(), temps.size());
++    if (got <= 0 || got > count) return 2;
++    std::set<std::string> names;
++    int errors = 0, cpus = 0, gpus = 0, batteries = 0, pmics = 0;
++    for (ssize_t i = 0; i < got; ++i) {
++        const auto& t = temps[i];
++        printf("TEMP name=%s type=%d celsius=%.3f\n", t.name, t.type, t.current_value);
++        if (!names.insert(t.name).second || !std::isfinite(t.current_value) ||
++            t.current_value < -50 || t.current_value > 150) ++errors;
++        cpus += t.type == DEVICE_TEMPERATURE_CPU;
++        gpus += t.type == DEVICE_TEMPERATURE_GPU;
++        batteries += t.type == DEVICE_TEMPERATURE_BATTERY;
++        pmics += std::string(t.name) == "pm8841_tz" || std::string(t.name) == "pm8941_tz";
++    }
++    if (cpus != 4 || gpus != 1 || batteries != 1 || pmics != 2) ++errors;
++    // A smaller caller buffer must neither be overwritten nor report a larger
++    // filled length. This matters when availability changes between HAL queries.
++    temperature_t small[2] = {};
++    small[1].name = "guard";
++    const ssize_t shortCount = module->getTemperatures(module, small, 1);
++    if (shortCount != 1 || std::string(small[1].name) != "guard") ++errors;
++    const ssize_t cpuCount = module->getCpuUsages(module, nullptr);
++    if (cpuCount != 4) ++errors;
++    if (cpuCount == 4) {
++        std::vector<cpu_usage_t> usage(cpuCount);
++        if (module->getCpuUsages(module, usage.data()) != cpuCount) ++errors;
++        names.clear();
++        for (const auto& cpu : usage) {
++            printf("CPU name=%s active=%llu total=%llu online=%d\n", cpu.name,
++                   static_cast<unsigned long long>(cpu.active),
++                   static_cast<unsigned long long>(cpu.total), cpu.is_online);
++            if (!names.insert(cpu.name).second || cpu.active > cpu.total) ++errors;
++        }
++    }
++    printf("RESULT errors=%d cpuTemps=%d gpuTemps=%d batteryTemps=%d pmics=%d\n",
++           errors, cpus, gpus, batteries, pmics);
++    dlclose(handle);
++    return errors ? 1 : 0;
++}
+diff --git a/sepolicy/hal_thermal_default.te b/sepolicy/hal_thermal_default.te
+new file mode 100644
+--- /dev/null
++++ b/sepolicy/hal_thermal_default.te
+@@ -0,0 +1,3 @@
++# The board thermal HAL reports the power-supply battery temperature as well
++# as TSENS/PMIC zones. It only reads these nodes; thermal-engine owns control.
++r_dir_file(hal_thermal_default, sysfs_battery_supply)

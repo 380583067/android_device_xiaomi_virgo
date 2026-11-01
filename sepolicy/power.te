@@ -1,0 +1,3 @@
+# power_set_interactive_ext() toggles these GPIO-key nodes on sleep/wake.
+type virgo_gpio_keys_sysfs, fs_type, sysfs_type;
+allow hal_power_default virgo_gpio_keys_sysfs:file rw_file_perms;

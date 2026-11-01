@@ -1,0 +1,46 @@
+diff --git a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java
+index ae95559..274aa54 100644
+--- a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java
++++ b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminAdd.java
+@@ -645,7 +645,9 @@ public class DeviceAdminAdd extends CollapsingToolbarBaseActivity {
+         mAdminName.setText(mDeviceAdmin.loadLabel(getPackageManager()));
+         try {
+             mAdminDescription.setText(
+-                    mDeviceAdmin.loadDescriptionSafe(getPackageManager()));
++                    // Android 14 exposes loadDescription(); the surrounding NotFoundException
++                    // handling preserves the safe fallback used when an admin has no description.
++                    mDeviceAdmin.loadDescription(getPackageManager()));
+             mAdminDescription.setVisibility(View.VISIBLE);
+         } catch (Resources.NotFoundException e) {
+             mAdminDescription.setVisibility(View.GONE);
+diff --git a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java
+index 99be343..730faea 100644
+--- a/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java
++++ b/src/com/android/settings/applications/specialaccess/deviceadmin/DeviceAdminListItem.java
+@@ -46,7 +46,8 @@ class DeviceAdminListItem implements Comparable<DeviceAdminListItem> {
+         final PackageManager pm = context.getPackageManager();
+         mName = mInfo.loadLabel(pm);
+         try {
+-            mDescription = mInfo.loadDescriptionSafe(pm);
++            // Android 14 exposes loadDescription(); keep the existing missing-resource fallback.
++            mDescription = mInfo.loadDescription(pm);
+         } catch (Resources.NotFoundException exception) {
+             Log.w(TAG, "Setting description to null because can't find resource: " + mKey);
+         }
+diff --git a/src/com/android/settings/password/BiometricFragment.java b/src/com/android/settings/password/BiometricFragment.java
+index b90450c..4e7b96f 100644
+--- a/src/com/android/settings/password/BiometricFragment.java
++++ b/src/com/android/settings/password/BiometricFragment.java
+@@ -141,8 +141,10 @@ public class BiometricFragment extends InstrumentedFragment {
+                 .setDisallowBiometricsIfPolicyExists(
+                         promptInfo.isDisallowBiometricsIfPolicyExists())
+                 .setShowEmergencyCallButton(promptInfo.isShowEmergencyCallButton())
+-                .setReceiveSystemEvents(true)
+-                .setClassNameIfItIsConfirmDeviceCredentialActivity();
++                // Android 14's BiometricPrompt does not expose the newer
++                // ConfirmDeviceCredentialActivity class-name hint; its framework cannot consume
++                // that metadata on this release.
++                .setReceiveSystemEvents(true);
+ 
+         if (Flags.enableBiometricsToUnlockPrivateSpace()) {
+             promptBuilder = promptBuilder.setAllowBackgroundAuthentication(true /* allow */,

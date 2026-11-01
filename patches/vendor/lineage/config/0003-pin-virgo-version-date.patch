@@ -1,0 +1,18 @@
+diff --git a/config/version.mk b/config/version.mk
+--- a/config/version.mk
++++ b/config/version.mk
+@@ -5,6 +5,14 @@
+     LINEAGE_BUILD_DATE := $(shell date -u +%Y%m%d_%H%M%S)
+ else
+     LINEAGE_BUILD_DATE := $(shell date -u +%Y%m%d)
++endif
++
++# Match Virgo's fixed ROM timestamp, including optional time in the ZIP name.
++ifeq ($(TARGET_PRODUCT),lineage_virgo)
++    LINEAGE_BUILD_DATE := 20261024
++    ifeq ($(LINEAGE_VERSION_APPEND_TIME_OF_DAY),true)
++        LINEAGE_BUILD_DATE := 20261024_102400
++    endif
+ endif
+ 
+ # Set LINEAGE_BUILDTYPE from the env RELEASE_TYPE, for jenkins compat

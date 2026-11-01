@@ -15,3 +15,11 @@
 
 PRODUCT_MAKEFILES := \
     $(LOCAL_DIR)/lineage_virgo.mk
+
+# Android 14 lunch targets include the AP2A release name. Keep the eng
+# combination available for this legacy device so an explicit eng build
+# retains the platform's root/ADB debugging defaults.
+COMMON_LUNCH_CHOICES := \
+    lineage_virgo-ap2a-user \
+    lineage_virgo-ap2a-userdebug \
+    lineage_virgo-ap2a-eng

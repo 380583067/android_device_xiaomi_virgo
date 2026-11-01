@@ -18,8 +18,10 @@ cc_library_static {
     name: "libinit_virgo",
     recovery_available: true,
     srcs: ["init_virgo.cpp"],
+    // Android 14 exports android-base headers through libbase_headers; the
+    // old system/core/base/include path no longer exists after libbase moved.
+    header_libs: ["libbase_headers"],
     include_dirs: [
-        "system/core/base/include",
         "system/core/init"
     ],
     shared_libs: [

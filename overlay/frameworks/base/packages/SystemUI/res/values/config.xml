@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adreno 330 shares bandwidth with the display and AVC encoder. -->
+    <integer name="config_screenRecorderMaxFramerate">30</integer>
+    <string name="config_screenRecorderAVCProfileLevel" translatable="false">4.1</string>
+</resources>

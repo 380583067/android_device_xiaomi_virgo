@@ -1,0 +1,21 @@
+diff --git a/src/com/android/settings/connecteddevice/usb/UsbConnectionBroadcastReceiver.java b/src/com/android/settings/connecteddevice/usb/UsbConnectionBroadcastReceiver.java
+--- a/src/com/android/settings/connecteddevice/usb/UsbConnectionBroadcastReceiver.java
++++ b/src/com/android/settings/connecteddevice/usb/UsbConnectionBroadcastReceiver.java
+@@ -93,6 +93,17 @@
+             mFunctions = functions;
+             mDataRole = mUsbBackend.getDataRole();
+             mPowerRole = mUsbBackend.getPowerRole();
++            // Micro-USB gadgets can report a connection without a USB port HAL.
++            // In that case USB_CONNECTED identifies the peripheral connection;
++            // keep host-only connections and disconnected devices unchanged.
++            if (mDataRole == UsbPortStatus.DATA_ROLE_NONE
++                    && intent.getBooleanExtra(UsbManager.USB_CONNECTED, false)
++                    && !intent.getBooleanExtra(UsbManager.USB_HOST_CONNECTED, false)) {
++                mDataRole = UsbPortStatus.DATA_ROLE_DEVICE;
++                if (mPowerRole == UsbPortStatus.POWER_ROLE_NONE) {
++                    mPowerRole = UsbPortStatus.POWER_ROLE_SINK;
++                }
++            }
+         } else if (UsbManager.ACTION_USB_PORT_CHANGED.equals(intent.getAction())) {
+             UsbPortStatus portStatus = intent.getExtras()
+                     .getParcelable(UsbManager.EXTRA_PORT_STATUS);

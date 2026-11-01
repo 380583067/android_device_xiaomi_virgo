@@ -1,0 +1,9 @@
+# Virgo's legacy sensors passthrough HAL runs inside system_server.
+# Label only this board's five IIO sensor devices for read-only acquisition.
+type virgo_sensor_device, dev_type;
+allow system_server virgo_sensor_device:chr_file r_file_perms;
+
+# The passthrough HAL reads this phone's factory calibration during startup.
+# Keep access limited to the explicitly labeled calibration files.
+type virgo_sensor_calibration_file, file_type;
+allow system_server virgo_sensor_calibration_file:file r_file_perms;

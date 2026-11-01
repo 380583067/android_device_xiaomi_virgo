@@ -1,0 +1,35 @@
+diff --git a/packages/SystemUI/shared/src/com/android/systemui/shared/recents/ISystemUiProxy.aidl b/packages/SystemUI/shared/src/com/android/systemui/shared/recents/ISystemUiProxy.aidl
+index d28d227bc..ab3275502 100644
+--- a/packages/SystemUI/shared/src/com/android/systemui/shared/recents/ISystemUiProxy.aidl
++++ b/packages/SystemUI/shared/src/com/android/systemui/shared/recents/ISystemUiProxy.aidl
+@@ -158,5 +158,8 @@ interface ISystemUiProxy {
+      */
+     oneway void animateNavBarLongPress(boolean isTouchDown, boolean shrink, long durationMs) = 54;
+ 
+-    // Next id = 55
++    /** Dispatches a virtual key requested by Launcher to the focused system UI input path. */
++    oneway void onKeyEvent(int keycode) = 55;
++
++    // Next id = 56
+ }
+diff --git a/packages/SystemUI/src/com/android/systemui/recents/OverviewProxyService.java b/packages/SystemUI/src/com/android/systemui/recents/OverviewProxyService.java
+index 81dd60167..8f35f42ab 100644
+--- a/packages/SystemUI/src/com/android/systemui/recents/OverviewProxyService.java
++++ b/packages/SystemUI/src/com/android/systemui/recents/OverviewProxyService.java
+@@ -264,6 +264,16 @@ public class OverviewProxyService implements CallbackController<OverviewProxyLis
+             });
+         }
+ 
++        @Override
++        public void onKeyEvent(int keycode) {
++            // Keep Launcher keyboard navigation working on Android 14, whose shared proxy AIDL
++            // dropped this callback while the Launcher-side proxy still uses it for HOME.
++            verifyCallerAndClearCallingIdentityPostMain("onKeyEvent", () -> {
++                sendEvent(KeyEvent.ACTION_DOWN, keycode);
++                sendEvent(KeyEvent.ACTION_UP, keycode);
++            });
++        }
++
+         @Override
+         public void onImeSwitcherPressed() {
+             // TODO(b/204901476) We're intentionally using the default display for now since

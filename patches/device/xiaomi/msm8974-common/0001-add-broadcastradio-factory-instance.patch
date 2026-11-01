@@ -1,0 +1,18 @@
+diff --git a/manifest.xml b/manifest.xml
+index 0000000..0000000 100644
+--- a/manifest.xml
++++ b/manifest.xml
+@@ -45,6 +45,13 @@
+         <name>android.hardware.broadcastradio</name>
+         <transport arch="32">passthrough</transport>
+         <version>1.0</version>
++        <!-- Android 14 checkvintf requires the passthrough factory interface
++             instance to be explicit; this is the 1.0 interface implemented
++             by the legacy 32-bit broadcast radio module above. -->
++        <interface>
++            <name>IBroadcastRadioFactory</name>
++            <instance>default</instance>
++        </interface>
+     </hal>
+     <hal format="hidl">
+         <name>android.hardware.camera.provider</name>

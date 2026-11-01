@@ -27,7 +27,9 @@ def IncrementalOTA_Assertions(info):
     return
 
 def AddBasebandAssertion(info):
-    android_info = info.input_zip.read("OTA/android-info.txt")
+    # ZipFile.read() returns bytes; decode before matching with Python 3's
+    # string regular expression, or OTA packaging fails with a type error.
+    android_info = info.input_zip.read("OTA/android-info.txt").decode("utf-8")
     m = re.search(r'require\s+version-baseband\s*=\s*(\S+)', android_info)
     if m:
         versions = m.group(1).split('|')

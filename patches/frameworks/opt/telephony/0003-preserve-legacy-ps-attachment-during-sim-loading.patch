@@ -1,0 +1,30 @@
+diff --git a/src/java/com/android/internal/telephony/data/PhoneSwitcher.java b/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
+--- a/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
++++ b/src/java/com/android/internal/telephony/data/PhoneSwitcher.java
+@@ -55,6 +55,7 @@
+ import android.os.Registrant;
+ import android.os.RegistrantList;
+ import android.os.RemoteException;
++import android.os.SystemProperties;
+ import android.telephony.CarrierConfigManager;
+ import android.telephony.PhoneCapability;
+ import android.telephony.PhoneStateListener;
+@@ -1278,6 +1279,18 @@
+         if (mHalCommandToUse == HAL_COMMAND_ALLOW_DATA || mHalCommandToUse == HAL_COMMAND_UNKNOWN) {
+             // Skip ALLOW_DATA for single SIM device
+             if (mActiveModemCount > 1) {
++                if (!isPhoneActive(phoneId) && mPreferredDataPhoneId == INVALID_PHONE_INDEX
++                        && SubscriptionManager.isUsableSubIdValue(mPhoneSubscriptions[phoneId])
++                        && SystemProperties.getBoolean("ro.vendor.radio.legacy_hidl", false)) {
++                    // During SIM loading the subscription mapping can become valid
++                    // before the default data subscription. Old QCRIL detaches PS on
++                    // ALLOW_DATA(false), but the following true only selects DDS and
++                    // does not reattach. Preserve attachment until a DDS is resolved.
++                    logl("Preserving legacy data attachment while default SIM is unresolved");
++                    AsyncResult.forMessage(message, null, null);
++                    message.sendToTarget();
++                    return;
++                }
+                 PhoneFactory.getPhone(phoneId).mCi.setDataAllowed(isPhoneActive(phoneId), message);
+             }
+         } else if (phoneId == mPreferredDataPhoneId) {
